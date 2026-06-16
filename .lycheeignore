@@ -1,0 +1,9 @@
+# Reference: https://lychee.cli.rs/recipes/excluding-links/
+
+# Sites that protect against automated access
+^https://dl\.acm\.org
+^https://en\.cppreference\.com
+^https://old\.reddit\.com
+^https://registry\.khronos\.org
+^https://www\.freedesktop\.org
+^https://www\.reddit\.com
