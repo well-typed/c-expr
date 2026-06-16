@@ -2,23 +2,14 @@
 
 module C.Operator.Internal where
 
--- base
-import Control.Arrow
-  ( (***), first, second )
-import Control.Exception
-  ( assert )
-import qualified Data.Kind as Hs
+import Control.Arrow (first, second, (***))
+import Control.Exception (assert)
+import Data.Kind qualified as Hs
+import Data.Nat (Nat (..))
+import Data.Vec.Lazy (Vec (..))
 import Data.Void qualified as Absurd
-import GHC.Generics
-  ( Generic )
+import GHC.Generics (Generic)
 
--- fin
-import Data.Nat ( Nat(..) )
-
--- vec
-import Data.Vec.Lazy ( Vec(..) )
-
--- c-expr
 import C.Type
 
 --------------------------------------------------------------------------------

@@ -6,11 +6,10 @@ module C.Operators
 
   ) where
 
--- vec
 import Data.Vec.Lazy
 
--- c-expr
 import C.Type
+
 import C.Operator.Internal
 
 

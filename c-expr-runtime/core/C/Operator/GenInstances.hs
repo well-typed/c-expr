@@ -3,20 +3,16 @@
 module C.Operator.GenInstances
   ( cExprInstances ) where
 
--- base
-import Prelude
-  hiding ( Num(..), Fractional(..), Integral(..) )
+import Prelude hiding (Fractional (..), Integral (..), Num (..))
 import Prelude qualified
-import Control.Monad
-  ( guard )
+
+import Control.Monad (guard)
 import Data.Bits qualified as Bits
 import Foreign.C.Types
-
--- template-haskell
 import Language.Haskell.TH qualified as TH
 
--- c-expr
 import C.Type qualified as C
+
 import C.Operator.Classes qualified as C
 import C.Operator.Internal qualified as C
 import C.Operator.TH

@@ -9,56 +9,31 @@ module CallClang
   )
   where
 
--- base
-import Control.Exception
-  ( bracket )
-import Control.Monad.IO.Class
-  ( MonadIO(liftIO) )
-import Data.Foldable
-  ( toList )
-import Data.List
-  ( intercalate, partition )
-import Data.Maybe
-  ( listToMaybe )
-import Text.Read
-  ( readMaybe )
-
--- containers
-import Data.IntMap.Strict
-  ( IntMap )
+import Control.Exception (bracket)
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Data.Default (Default (def))
+import Data.Foldable (toList)
+import Data.IntMap.Strict (IntMap)
 import Data.IntMap.Strict qualified as IntMap
-import Data.Map.Strict
-  ( Map )
+import Data.List (intercalate, partition)
+import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-
--- data-default
-import Data.Default (Default(def))
-
--- text
-import Data.Text
-  ( Text )
+import Data.Maybe (listToMaybe)
+import Data.Text (Text)
 import Data.Text qualified as Text
-
--- vec
-import Data.Vec.Lazy
-  ( Vec(..) )
+import Data.Vec.Lazy (Vec (..))
 import Data.Vec.Lazy qualified as Vec
+import Text.Read (readMaybe)
 
--- clang
-import Clang.Args qualified as Clang
-import Clang.Enum.Bitfield qualified as Clang
-  ( BitfieldEnum, bitfieldEnum )
-import Clang.Enum.Simple qualified as Clang
-  ( fromSimpleEnum )
-import Clang.HighLevel qualified as Clang
-  hiding ( clang_getCursorLocation )
-import Clang.HighLevel.Types qualified as Clang
-import Clang.LowLevel.Core qualified as Clang
-  hiding ( clang_visitChildren )
-import Clang.Paths qualified as Paths
-
--- c-expr
 import C.Type
+
+import Clang.Args qualified as Clang
+import Clang.Enum.Bitfield qualified as Clang (BitfieldEnum, bitfieldEnum)
+import Clang.Enum.Simple qualified as Clang (fromSimpleEnum)
+import Clang.HighLevel qualified as Clang hiding (clang_getCursorLocation)
+import Clang.HighLevel.Types qualified as Clang
+import Clang.LowLevel.Core qualified as Clang hiding (clang_visitChildren)
+import Clang.Paths qualified as Paths
 
 --------------------------------------------------------------------------------
 

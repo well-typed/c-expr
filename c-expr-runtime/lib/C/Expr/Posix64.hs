@@ -12,11 +12,10 @@ module C.Expr.Posix64
   , module C.Expr.Posix64
   ) where
 
--- c-expr
-import C.Type ( Platform(..), WordWidth(..), OS(..) )
+import C.Type (OS (..), Platform (..), WordWidth (..))
+
 import C.Operator.Classes
-import C.Operator.GenInstances
-  ( cExprInstances )
+import C.Operator.GenInstances (cExprInstances)
 
 --------------------------------------------------------------------------------
 

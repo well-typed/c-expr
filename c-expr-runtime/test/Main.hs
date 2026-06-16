@@ -8,90 +8,62 @@
 
 module Main where
 
--- base
-import Control.Arrow
-  ( first )
-import Data.List
-  ( isPrefixOf )
-import Data.String
-  ( IsString(fromString) )
-
-import Data.Maybe
-  ( catMaybes )
-import Data.Traversable
-  ( for )
-import System.Exit
-
--- containers
-import Data.Map.Strict
-  ( Map )
+import Control.Arrow (first)
+import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-
--- directory
-import System.Directory
-  ( doesFileExist, listDirectory, getCurrentDirectory )
-
--- filepath
-import System.FilePath
-  ( (</>), (-<.>) )
-
--- fin
+import Data.Maybe (catMaybes)
+import Data.String (IsString (fromString))
+import Data.Text qualified as Text (pack)
+import Data.Traversable (for)
 import Data.Type.Nat
+import Data.Vec.Lazy (Vec (..))
+import System.Directory (doesDirectoryExist, getCurrentDirectory)
+import System.Exit
+import System.FilePath (takeDirectory, (</>))
 
--- text
-import Data.Text qualified as Text
-  ( pack )
-
--- vec
-import Data.Vec.Lazy
-  ( Vec(..) )
-
--- clang
-import Clang.Args qualified as Clang
-
--- c-expr
 import C.Type
 import C.Type.Internal.Universe
 
-import C.Operators
-  ( Op(..), UnaryOp(..), BinaryOp(..)
-  , opResType, pprOpApp, pprOp
-  )
+import Clang.Args qualified as Clang
 
--- c-expr:test
-import CallClang
-  ( CType(..)
---  , queryClangBuildTargetTriple
-  , queryClangForResultType, getExpansionTypeMapping
-  )
+import C.Operators (BinaryOp (..), Op (..), UnaryOp (..), opResType, pprOp,
+                    pprOpApp)
+import CallClang (CType (..), getExpansionTypeMapping, queryClangForResultType)
 
 --------------------------------------------------------------------------------
 
--- | We want to pass pre-defined @musl@ standard library headers to Clang
--- for the testsuite. These are currently in the @hs-bindgen@ package, so we
--- do a bit of faff to be able to find them.
-findPackageDirectory :: FilePath -> String -> IO (Maybe FilePath)
-findPackageDirectory root pkgname = do
-  dirs0 <- listDirectory root
-  dirs1 <- listDirectory (root </> "..")
-  let attempts = "." : ".." : filter (pkgname `isPrefixOf`) dirs0 ++ map (".." </>) (filter (pkgname `isPrefixOf`) dirs1)
-  try attempts
+-- | The bundled @musl@ standard library headers we pass to Clang for the
+-- testsuite, so that results do not depend on whichever C headers happen to be
+-- installed on the host. They live in @c-expr-runtime/musl-include@ (an
+-- @extra-source-file@, not installed for library consumers), so we locate them
+-- relative to the working directory: @cabal test@ runs in the package
+-- directory, but we also search ancestors so the lookup is robust.
+findMuslInclude :: IO (Maybe FilePath)
+findMuslInclude = getCurrentDirectory >>= go
   where
-    try :: [FilePath] -> IO (Maybe FilePath)
-    try [] =
-      return Nothing
-    try (dir:dirs) = do
-      mbRes <- tryOne dir
-      case mbRes of
-        Nothing -> try dirs
-        Just r  -> return $ Just r
-    tryOne :: FilePath -> IO (Maybe FilePath)
-    tryOne dir = do
-      here <- doesFileExist (root </> dir </> pkgname -<.> ".cabal")
-      return $
-        if here
-        then Just dir
-        else Nothing
+    go :: FilePath -> IO (Maybe FilePath)
+    go dir = do
+      let candidate = dir </> "musl-include" </> "x86_64"
+      here <- doesDirectoryExist candidate
+      if here
+        then return (Just candidate)
+        else let parent = takeDirectory dir
+             in if parent == dir then return Nothing else go parent
+
+-- | A hard-to-miss warning printed when the bundled @musl@ headers cannot be
+-- found and we fall back to the host's system headers.
+muslWarning :: String
+muslWarning = unlines
+  [ "#############################################################################"
+  , "##                                                                         ##"
+  , "##  WARNING: bundled musl headers ('musl-include/x86_64') not found!       ##"
+  , "##                                                                         ##"
+  , "##  Falling back to whatever C system headers exist on this machine.       ##"
+  , "##  Results may differ from the musl-based reference and tests may fail    ##"
+  , "##  spuriously. Make sure 'c-expr-runtime/musl-include' is present.        ##"
+  , "##                                                                         ##"
+  , "#############################################################################"
+  ]
 
 main :: IO ()
 main = do
@@ -100,13 +72,10 @@ main = do
     case platformOS hostPlatform of
       Windows -> return ["-target", "x86_64-unknown-mingw32"]  -- GHC target
       Posix -> do
-        cwd <- getCurrentDirectory
-        includeArgs <- findPackageDirectory cwd "hs-bindgen" >>= \case
-          Just hsBindgenDir ->
-            return ["-I", fromString (hsBindgenDir </> "musl-include/x86_64")]
-          Nothing -> do
-            putStrLn "WARNING: unable to find 'hs-bindgen' directory"
-            putStrLn "The test suite will use whichever C header files it finds on your system."
+        includeArgs <- findMuslInclude >>= \case
+          Just muslDir -> return ["-I", fromString muslDir]
+          Nothing      -> do
+            putStr muslWarning
             return []
         return $ "-target" : "x86_64-pc-linux" : includeArgs
 
