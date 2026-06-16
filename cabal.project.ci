@@ -1,0 +1,5 @@
+import: ./cabal.project.base.ci
+
+packages:
+  c-expr-runtime
+  c-expr-dsl
