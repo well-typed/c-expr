@@ -1,0 +1,80 @@
+name: Setup LLVM
+description: Build and install LLVM
+
+inputs:
+  version:
+    description: 'LLVM version'
+    required: true
+
+runs:
+  using: composite
+  steps:
+  # `clang` version 18 fails to find `libtinfo5`.
+  # https://askubuntu.com/questions/1531760/how-to-install-libtinfo5-on-ubuntu24-04
+  - name: Ubuntu LLVM 18 quirks - Install libtinfo5
+    shell: bash
+    if: ${{ runner.os == 'Linux' && inputs.version == '18' }}
+    run: |
+      wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb
+      sudo apt install ./libtinfo5_6.3-2ubuntu0.1_amd64.deb
+
+  - name: Windows quirks - Filter MSVC LLVM from PATH
+    shell: powershell
+    if: ${{ runner.os == 'Windows' }}
+    run: |
+      $oldPathDirs = ($env:PATH).Split(';')
+      $newPathDirs = $oldPathDirs | Where-Object { $_ -notlike '*LLVM*' }
+      $newPath = $newPathDirs -join ';'
+      echo "PATH=$newPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding UTF8 -Append
+
+  - name: Install LLVM/Clang
+    uses: KyleMayes/install-llvm-action@v2.0.8
+    with:
+      version: ${{ inputs.version }}
+      directory: ${{ runner.temp }}/llvm
+      env: false
+
+  - name: Windows quirks - Configure environment variables
+    shell: bash
+    if: ${{ runner.os == 'Windows' }}
+    run: |
+      echo "LLVM_CONFIG=$LLVM_PATH/bin/llvm-config.exe" | tee -a "$GITHUB_ENV"
+      echo "LIBCLANG_PATH=$LLVM_PATH/lib" | tee -a "$GITHUB_ENV"
+
+  - name: macOS quirks - Configure environment variables
+    shell: bash
+    if: ${{ runner.os == 'MacOS' }}
+    run: |
+      echo "LLVM_CONFIG=$LLVM_PATH/bin/llvm-config" | tee -a "$GITHUB_ENV"
+      echo "LIBCLANG_PATH=$LLVM_PATH/lib" | tee -a "$GITHUB_ENV"
+      # TODO-D ? In `c-expr` we don't do anything. Do we still need to set SDKROOT?
+      # hs-bindgen automatically sets SDKROOT, but we still need to to build
+      # shared libraries with Clang.
+      SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+      echo "SDKROOT=$SDKROOT" | tee -a "$GITHUB_ENV"
+
+  - name: Remove tarballs from temporary directory (Linux)
+    shell: bash
+    if: ${{ runner.os == 'Linux' }}
+    run: |
+        cd ${{ runner.temp }} || exit 1
+        pwd
+        echo "--- Temporary directory size BEFORE REMOVAL ---"
+        du -sh .
+        find . -maxdepth 1 -type f -exec rm -v {} +
+        echo "--- Temporary directory size AFTER REMOVAL ---"
+        du -sh .
+
+  - name: Debug (LLVM/Clang)
+    shell: bash
+    run: |
+      echo '### which clang'
+      which clang
+      echo '### clang --version'
+      clang --version
+      echo '### $LLVM_PATH'
+      echo "$LLVM_PATH"
+      echo '### ls $LLVM_PATH'
+      ls "$LLVM_PATH"
+      echo '### ls $LLVM_PATH/bin'
+      ls "$LLVM_PATH/bin"

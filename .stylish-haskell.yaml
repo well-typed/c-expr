@@ -304,8 +304,6 @@ steps:
         - match: "^(C\\.Char|C\\.Type|C\\.Expr\\.HostPlatform)"
         - match: "^C\\.Expr\\.[^.]+"
         - match: "^Clang\\>"
-        - match: "^HsBindgen\\.Runtime\\>"
-        - match: "^HsBindgen\\>"
         - match: "^(Test\\.Common\\.|Test\\.HsBindgen\\.)>"
 
 # A common setting is the number of columns (parts of) code will be wrapped

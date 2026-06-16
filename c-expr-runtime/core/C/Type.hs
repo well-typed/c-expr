@@ -60,21 +60,15 @@ module C.Type
 
   ) where
 
--- base
-import Data.Kind qualified as Hs
-import Data.Semigroup
-  ( Arg(..) )
 import Data.GADT.Compare
+import Data.Kind qualified as Hs
+import Data.Semigroup (Arg (..))
 import Data.Type.Equality
 import Foreign.C.Types
-import Foreign.Ptr qualified as Foreign
-  ( Ptr )
-import Foreign.Storable
-  ( sizeOf )
-import GHC.Generics
-  ( Generic )
-import System.Info qualified
-  ( os )
+import Foreign.Ptr qualified as Foreign (Ptr)
+import Foreign.Storable (sizeOf)
+import GHC.Generics (Generic)
+import System.Info qualified (os)
 
 --------------------------------------------------------------------------------
 

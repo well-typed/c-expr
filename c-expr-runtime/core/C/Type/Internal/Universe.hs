@@ -9,21 +9,12 @@ module C.Type.Internal.Universe
   , allArithmeticTypes, allIntegralTypes, allIntLikeTypes
   ) where
 
--- base
-import Data.Functor
-  ( (<&>) )
-import GHC.Generics
-  ( Generic )
+import Data.Functor ((<&>))
+import Data.Type.Nat qualified as Fin
+import Data.Vec.Lazy (Vec (..))
+import Data.Vec.Lazy qualified as Vec (snoc)
+import GHC.Generics (Generic)
 
--- fin
-import qualified Data.Type.Nat as Fin
-
--- vec
-import Data.Vec.Lazy ( Vec(..) )
-import Data.Vec.Lazy qualified as Vec
-  ( snoc )
-
--- c-expr
 import C.Type
 
 --------------------------------------------------------------------------------

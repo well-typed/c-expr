@@ -27,14 +27,10 @@ module C.Operator.Classes
   , Shift(..)
   ) where
 
--- base
-import Prelude
-  ( Bool(..), Eq(..), Num(..) )
+import Prelude (Bool (..), Eq (..), Num (..))
 
-import Data.Kind
-  ( Type, Constraint )
-import Foreign
-  ( Ptr, nullPtr )
+import Data.Kind (Constraint, Type)
+import Foreign (Ptr, nullPtr)
 import Foreign.C
 
 --------------------------------------------------------------------------------
