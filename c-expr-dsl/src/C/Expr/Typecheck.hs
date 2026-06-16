@@ -132,7 +132,7 @@ data TypecheckedMacroTypeExpr var = TypecheckedMacroTypeExpr{
 data TypecheckedMacroValueExpr var = forall ctx. TypecheckedMacroValueExpr{
       macroValueParams :: Vec ctx Name
     , macroValueBody   :: V.Expr ctx var
-      -- TODO <https://github.com/well-typed/hs-bindgen/issues/1950>
+      -- TODO <https://github.com/well-typed/c-expr/issues/8>
       --
       -- We should not require 'FunValue's for value-like expressions.
     , macroValueType   :: Quant (FunValue, Type Ty)

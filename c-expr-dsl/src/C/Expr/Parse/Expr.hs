@@ -175,7 +175,7 @@ typeBase cStd macroParams =
         -- the two by restricting @parseMacroType@ to keyword\/tagged bases only
         -- does not help (both paths produce the same @'Var'@ node) while
         -- adding backtracking overhead.
-      , (Term . mkVar) <$> parseName
+      , Term . mkVar <$> parseName
       ]
   where
     mkVar :: Name -> Term ctx Ps
@@ -216,7 +216,7 @@ taggedTypeLit = do
       , TagEnum   <$ keyword "enum"
       ]
     name <- parseName
-    return $ (tag, name)
+    return (tag, name)
 
 data TypeKeyword =
     KwSigned | KwUnsigned

@@ -19,11 +19,8 @@ instance Exception PanicException where
         , prettyCallStack cs
         ]
 
--- TODO <https://github.com/well-typed/hs-bindgen/issues/943>
---
--- Amend when `c-expr-dsl` is separated from `hs-bindgen`.
 pleaseReport :: String
-pleaseReport = "Please report this as a bug at https://github.com/well-typed/hs-bindgen/issues/"
+pleaseReport = "Please report this as a bug at https://github.com/well-typed/c-expr/issues/"
 
 -- | Panic in pure context
 panicPure :: HasCallStack => String -> a

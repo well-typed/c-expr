@@ -308,7 +308,7 @@ deriving stock instance Eq ( GenerativeTyCon nbArgs res )
 
 type DataTyCon :: Nat -> Hs.Type
 data DataTyCon nbArgs where
-  -- TODO <https://github.com/well-typed/hs-bindgen/issues/1900>
+  -- TODO <https://github.com/well-typed/c-expr/issues/6>
   --
   -- Split the type language into types of types, and types of values.
   -- | Type of types
@@ -459,7 +459,7 @@ instance Show ( ClassTyCon n ) where
   Type environment
 -------------------------------------------------------------------------------}
 
--- TODO <https://github.com/well-typed/hs-bindgen/issues/1915>
+-- TODO <https://github.com/well-typed/c-expr/issues/7>
 --
 -- Use @'Maybe' 'FunValue'@ and emit typecheck error when value required but
 -- unavailable.
@@ -481,7 +481,7 @@ type ParamEnv = IntMap   ( Type Ty )
 -- nodes, so they are resolved through the @injectTagged@ callback of
 -- 'C.Expr.Typecheck.tcMacros' instead.
 
--- TODO <https://github.com/well-typed/hs-bindgen/issues/1915>
+-- TODO <https://github.com/well-typed/c-expr/issues/7>
 --
 -- Should simplify significantly when we use @'Maybe' 'FunValue'@.
 buildTypedefEnv :: Set Name -> TypeEnv

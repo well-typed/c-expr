@@ -54,6 +54,7 @@ library
     C.Expr.Typecheck.Interface.Type
     C.Expr.Typecheck.Interface.Value
     C.Expr.Typecheck.Type
+    C.Expr.Util.Panic
 
   other-modules:
     C.Expr.Parse.Expr
@@ -68,7 +69,6 @@ library
     C.Expr.Syntax.TTG.Typecheck
     C.Expr.Syntax.Type
     C.Expr.Typecheck.Expr
-    C.Expr.Util.Panic
     C.Expr.Util.Parsec
     C.Expr.Util.TestEquality
 

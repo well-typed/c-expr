@@ -83,6 +83,7 @@ import C.Type qualified as Runtime
 
 import C.Expr.Syntax
 import C.Expr.Typecheck.Type
+import C.Expr.Util.Panic
 import C.Expr.Util.TestEquality
 
 import C.Operators qualified as Runtime
@@ -171,7 +172,7 @@ mkSubst = Subst
 
 substClashErr :: ( Show a, HasCallStack ) => String -> Int -> a -> a -> a
 substClashErr str i ty1 ty2 =
-  error $
+  panicPure $
     unlines
       [ str ++ ": incoherent substitution"
       , "TyVar with unique " ++ show ( Unique i ) ++ " mapped to two different types"
@@ -394,7 +395,7 @@ declareLocalParams tys ( TcPureM f ) = TcPureM \ ( TcEnv gbl lcl ) ->
 lookupLocalParam :: forall ctx. Idx ctx -> TcPureM ( Type Ty )
 lookupLocalParam i = TcPureM \ ( TcEnv _ lcl ) ->
     case IntMap.lookup (idxToInt i) ( tcLclParams lcl ) of
-      Nothing -> error "impossible: lookupLocalParam: index out of bounds"
+      Nothing -> panicPure "impossible: lookupLocalParam: index out of bounds"
       Just ty -> pure ty
 
 {-------------------------------------------------------------------------------
@@ -682,11 +683,9 @@ newtype CType = CType ( Runtime.Type CType )
 
 toMacroType :: Runtime.Type CType -> Maybe ( Type Ty )
 toMacroType = \case
-  -- TODO: the below should probably be throwPure_TODO,
-  -- but I can't figure a way to trigger this codepath; maybe it isn't possible yet.
-  -- Explicit casts would be one way to introduce `void`, but they don't work (yet).
-  -- https://github.com/well-typed/hs-bindgen/issues/441
-  Runtime.Void          -> error "C macro typechecker does not support 'void' (yet)"
+  -- See https://github.com/well-typed/hs-bindgen/issues/441. Explicit casts
+  -- would be one way to introduce `void`, but they don't work (yet).
+  Runtime.Void          -> panicPure "C macro typechecker does not support 'void' (yet)"
   Runtime.Arithmetic a  ->
     case a of
       Runtime.Integral  i -> Just $ IntLike   $ PrimIntInfoTy   $ CIntegralType i
@@ -725,8 +724,8 @@ fromMacroType = \case
               ( a ::: VNil ) ->
                 Runtime.Ptr . CType <$> fromMacroType a
 
-          PrimIntInfoTyCon {} -> error "fromMacroType: 'PrimIntInfoTyCon'"
-          PrimFloatInfoTyCon {} -> error "fromMacroType: 'PrimFloatInfoTyCon'"
+          PrimIntInfoTyCon {} -> panicPure "fromMacroType: 'PrimIntInfoTyCon'"
+          PrimFloatInfoTyCon {} -> panicPure "fromMacroType: 'PrimFloatInfoTyCon'"
 
 applySubstNormalise :: Runtime.Platform -> Subst tv -> Type ki -> Type ki
 applySubstNormalise plat subst = normaliseType plat . applySubst subst
@@ -1672,7 +1671,7 @@ matchOneInst ctOrig cls
     return $
       mapMaybeA ( tryDefault ctOrig matchSubst . ( $ instBndrs ) ) mbDflt
   | otherwise
-  = error $ unlines
+  = panicPure $ unlines
       [ "matchOneInst: incorrect class arity"
       , "class: " ++ show cls
       ]
@@ -1842,7 +1841,7 @@ evaluateTerm argVals tyEnv = \case
     -> Vec.reifyList args $ \ ( argsVec :: Vec m ( Expr ctx Tc ) ) ->
         case Nat.eqNat @n @m of
           Nothing ->
-            error $ unlines
+            panicPure $ unlines
               [ "Mismatched arity in evaluation of macro function call"
               , "function: " ++ show nm
               , "expected number of arguments: " ++ show ( Nat.reflectToNum @n Proxy :: Int )
@@ -1957,7 +1956,7 @@ tcExpr tyEnv macroNm args body =
     -- in the argument/result type, i.e. ambiguous type variables.
     -- These should have been defaulted away.
     unless (IntSet.null ambigs) $
-      error $
+      panicPure $
         unlines
           [ "tcExpr: ambiguous type variables"
           , "ambigs: " ++ show ambigs
@@ -1975,7 +1974,7 @@ tcExpr tyEnv macroNm args body =
                         ]
 
     unless allAtomic $
-      error $
+      panicPure $
         unlines
           [ "tcExpr computed a non-atomic type"
           , "qtvs: " ++ show qtvsList

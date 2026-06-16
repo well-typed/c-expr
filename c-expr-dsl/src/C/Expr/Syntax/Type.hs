@@ -1,6 +1,6 @@
 -- | AST for C types as they appear in macro definitions
 --
--- This covers the minimum amount of C type syntax needed for hs-bindgen:
+-- This covers the minimum amount of C type syntax needed for @hs-bindgen@:
 -- primitive types with sign/size specifiers and references to named types
 -- (typedefs / other macro types). Const qualifiers and pointer indirection
 -- are represented as 'TyApp' nodes in the expression tree using 'Const'

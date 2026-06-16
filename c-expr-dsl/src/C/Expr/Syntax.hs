@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeAbstractions #-}
 #endif
 
--- | The syntax for macros recognized by hs-bindgen
+-- | The syntax for macros recognized
 --
 -- Intended for unqualified import.
 module C.Expr.Syntax (

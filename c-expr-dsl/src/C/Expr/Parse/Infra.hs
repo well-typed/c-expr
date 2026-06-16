@@ -27,6 +27,8 @@ import Text.Parsec hiding (runParser, token, tokens)
 import Text.Parsec qualified as Parsec
 import Text.Parsec.Pos
 
+import C.Expr.Util.Panic
+
 import Clang.Enum.Simple
 import Clang.HighLevel.Types
 import Clang.LowLevel.Core
@@ -49,7 +51,7 @@ runParser p tokens =
     sourcePath :: FilePath
     sourcePath =
         case tokens of
-          []  -> error "runParser: empty list"
+          []  -> panicPure "runParser: empty list"
           t:_ -> getSourcePath $ singleLocPath start
             where
               start :: SingleLoc

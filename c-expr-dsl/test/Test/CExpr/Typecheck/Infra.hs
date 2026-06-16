@@ -33,6 +33,7 @@ import C.Type qualified as Runtime
 
 import C.Expr.Syntax
 import C.Expr.Typecheck
+import C.Expr.Util.Panic
 
 import Test.CExpr.Util
 
@@ -51,7 +52,7 @@ classifyOne ::
 classifyOne name params body =
     case Map.toList (runTcMacros [Macro fakeLoc name params body]) of
       ((_, x):_) -> x
-      []         -> error "classifyOne: unexpected empty typecheck result"
+      []         -> panicPure "classifyOne: unexpected empty typecheck result"
 
 -- | Typecheck a sequence of nullary macros in order, threading each successful
 -- result into the typing environment for later macros to reference.
