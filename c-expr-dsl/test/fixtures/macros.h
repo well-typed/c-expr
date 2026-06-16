@@ -205,7 +205,7 @@ y
 // We can parse this macro, but typecheck will fail.
 #define TYPE_FUN_WITH_PARAM(X) int
 
-// TODO <https://github.com/well-typed/hs-bindgen/issues/1904>
+// TODO <https://github.com/well-typed/c-expr/issues/1>
 //
 // Ternary operator is not yet in the expression grammar.
 #define BAD_TERNARY a ? b : c

@@ -682,10 +682,8 @@ newtype CType = CType ( Runtime.Type CType )
 
 toMacroType :: Runtime.Type CType -> Maybe ( Type Ty )
 toMacroType = \case
-  -- TODO: the below should probably be throwPure_TODO,
-  -- but I can't figure a way to trigger this codepath; maybe it isn't possible yet.
-  -- Explicit casts would be one way to introduce `void`, but they don't work (yet).
-  -- https://github.com/well-typed/hs-bindgen/issues/441
+  -- See https://github.com/well-typed/hs-bindgen/issues/441. Explicit casts
+  -- would be one way to introduce `void`, but they don't work (yet).
   Runtime.Void          -> error "C macro typechecker does not support 'void' (yet)"
   Runtime.Arithmetic a  ->
     case a of

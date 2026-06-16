@@ -24,6 +24,8 @@ import C.Expr.Util.Panic
 data Expr var =
     TypeLit M.TypeLit
   | Var var
+  -- TODO <https://github.com/well-typed/c-expr/issues/9>
+  --
   -- TODO <https://github.com/well-typed/hs-bindgen/issues/1521>
   --
   -- Change how we represent @const@.
