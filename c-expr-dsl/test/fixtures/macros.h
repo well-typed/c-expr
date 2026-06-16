@@ -146,7 +146,7 @@
 #define FUNC_ADD(a, b) a + b
 #define FUNC_NEG(x) (-x)
 #define FUNC_MULTIPLE_LOCAL_PARAMS(a, b, c, d) a + (b - (c + d))
-// TODO <https://github.com/well-typed/hs-bindgen/issues/1904>
+// TODO <https://github.com/well-typed/c-expr/issues/1>
 //
 // Ternary operator is not yet in the expression grammar (see below).
 // #define FUNC_MAX(a, b)       ((a) > (b) ? (a) : (b))

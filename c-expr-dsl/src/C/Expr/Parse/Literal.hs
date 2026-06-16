@@ -261,7 +261,7 @@ parseLiteralChar = do
   prefix <- parseCharPrefix
   case prefix of
     Just {} ->
-      -- TODO <https://github.com/well-typed/hs-bindgen/issues/2039>
+      -- TODO <https://github.com/well-typed/c-expr/issues/2>
       -- Support prefixed character literals.
       unexpected "wide character literals are not supported"
     Nothing -> do
@@ -428,7 +428,7 @@ parseLiteralString = do
   prefix <- parseCharPrefix
   case prefix of
     Just {} ->
-      -- TODO <https://github.com/well-typed/hs-bindgen/issues/2039>
+      -- TODO <https://github.com/well-typed/c-expr/issues/2>
       -- Support prefixed string literals.
       unexpected "unsupported string literal prefix"
     Nothing -> do
