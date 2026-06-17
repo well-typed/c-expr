@@ -26,8 +26,6 @@ data Expr var =
   | Var var
   -- TODO <https://github.com/well-typed/c-expr/issues/9>
   --
-  -- TODO <https://github.com/well-typed/hs-bindgen/issues/1521>
-  --
   -- Change how we represent @const@.
   | App Fun (Expr var)
 
