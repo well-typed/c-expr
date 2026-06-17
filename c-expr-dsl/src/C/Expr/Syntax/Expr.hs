@@ -7,7 +7,7 @@
 module C.Expr.Syntax.Expr (
     -- * Expressions
     Expr(..)
-  , TyFun(..)
+  , TyQual(..)
   , VaFun(..)
   , ValueLit(..)
   , Literal(..)
@@ -48,7 +48,7 @@ data Expr ctx p
   -- We don't need an extension point here, because we do not need to evaluate
   -- type functions in Haskell. 'XApp' may be unnecessary if we can remove
   -- 'FunValue'.
-  | forall n. TyApp             ( TyFun ( S n ) ) ( Vec ( S n ) ( Expr ctx p ) )
+  | forall n. TyApp             ( TyQual ( S n ) ) ( Vec ( S n ) ( Expr ctx p ) )
   -- | Exactly saturated non-nullary function application.
   | forall n. VaApp !( XApp p ) ( VaFun ( S n ) ) ( Vec ( S n ) ( Expr ctx p ) )
 deriving stock instance ( Show ( XVar p ), Show ( XApp p ) ) => Show ( Expr ctx p )
@@ -92,20 +92,21 @@ instance ( Ord ( XApp p ), Ord ( XVar p ) ) => Ord ( Expr ctx p ) where
   Functions
 -------------------------------------------------------------------------------}
 
-data TyFun arity where
+-- | Type qualifier
+data TyQual arity where
   -- | Pointer
-  Pointer :: TyFun ( S Z )
+  Pointer :: TyQual ( S Z )
   -- | Const
-  Const   :: TyFun ( S Z )
+  Const   :: TyQual ( S Z )
 
   -- NB: make sure to update 'instance GEq TyFun'
   -- when adding a new constructor.
 
-deriving stock instance Show ( TyFun arity )
-deriving stock instance Eq   ( TyFun arity )
-deriving stock instance Ord  ( TyFun arity )
+deriving stock instance Show ( TyQual arity )
+deriving stock instance Eq   ( TyQual arity )
+deriving stock instance Ord  ( TyQual arity )
 
-instance GEq TyFun where
+instance GEq TyQual where
   geq Pointer Pointer = Just Refl
   geq Const   Const   = Just Refl
   geq _        _        = Nothing
