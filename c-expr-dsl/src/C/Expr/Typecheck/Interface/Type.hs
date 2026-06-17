@@ -7,7 +7,7 @@
 -- @
 module C.Expr.Typecheck.Interface.Type (
     Expr(..)
-  , Fun(..)
+  , Qual(..)
   , fromExpr
   )
   where
@@ -24,12 +24,7 @@ import C.Expr.Util.Panic
 data Expr var =
     TypeLit M.TypeLit
   | Var var
-  -- TODO <https://github.com/well-typed/c-expr/issues/9>
-  --
-  -- TODO <https://github.com/well-typed/hs-bindgen/issues/1521>
-  --
-  -- Change how we represent @const@.
-  | App Fun (Expr var)
+  | App Qual (Expr var)
 
 deriving stock instance Eq var   => Eq         (Expr var)
 deriving stock instance Show var => Show       (Expr var)
@@ -37,7 +32,12 @@ deriving stock instance             Functor     Expr
 deriving stock instance             Foldable    Expr
 deriving stock instance             Traversable Expr
 
-data Fun =
+-- | Type qualifier
+--
+-- This is a straight-forward representation of the C syntax. For a detailed
+-- discussion of @const@, see
+-- https://github.com/well-typed/hs-bindgen/issues/1521.
+data Qual =
     Pointer
   | Const
   deriving stock (Eq, Show)

@@ -9,17 +9,18 @@
 module Main where
 
 import Control.Arrow (first)
+import Data.Char (isSpace)
+import Data.List (dropWhileEnd)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes)
-import Data.String (IsString (fromString))
 import Data.Text qualified as Text (pack)
 import Data.Traversable (for)
 import Data.Type.Nat
 import Data.Vec.Lazy (Vec (..))
-import System.Directory (doesDirectoryExist, getCurrentDirectory)
 import System.Exit
-import System.FilePath (takeDirectory, (</>))
+import System.Info qualified as Info
+import System.Process (readProcessWithExitCode)
 
 import C.Type
 import C.Type.Internal.Universe
@@ -32,54 +33,20 @@ import CallClang (CType (..), getExpansionTypeMapping, queryClangForResultType)
 
 --------------------------------------------------------------------------------
 
--- | The bundled @musl@ standard library headers we pass to Clang for the
--- testsuite, so that results do not depend on whichever C headers happen to be
--- installed on the host. They live in @c-expr-runtime/musl-include@ (an
--- @extra-source-file@, not installed for library consumers), so we locate them
--- relative to the working directory: @cabal test@ runs in the package
--- directory, but we also search ancestors so the lookup is robust.
-findMuslInclude :: IO (Maybe FilePath)
-findMuslInclude = getCurrentDirectory >>= go
-  where
-    go :: FilePath -> IO (Maybe FilePath)
-    go dir = do
-      let candidate = dir </> "musl-include" </> "x86_64"
-      here <- doesDirectoryExist candidate
-      if here
-        then return (Just candidate)
-        else let parent = takeDirectory dir
-             in if parent == dir then return Nothing else go parent
-
--- | A hard-to-miss warning printed when the bundled @musl@ headers cannot be
--- found and we fall back to the host's system headers.
-muslWarning :: String
-muslWarning = unlines
-  [ "#############################################################################"
-  , "##                                                                         ##"
-  , "##  WARNING: bundled musl headers ('musl-include/x86_64') not found!       ##"
-  , "##                                                                         ##"
-  , "##  Falling back to whatever C system headers exist on this machine.       ##"
-  , "##  Results may differ from the musl-based reference and tests may fail    ##"
-  , "##  spuriously. Make sure 'c-expr-runtime/musl-include' is present.        ##"
-  , "##                                                                         ##"
-  , "#############################################################################"
-  ]
-
 main :: IO ()
 main = do
+  resourceDirArgs <- clangResourceDirArgs
   let stdClangArg = "-std=c17"  -- C23 arg depends on libclang version
-  clangArgs <- fmap (Clang.ClangArgs . (stdClangArg :)) $
-    case platformOS hostPlatform of
-      Windows -> return ["-target", "x86_64-unknown-mingw32"]  -- GHC target
-      Posix -> do
-        includeArgs <- findMuslInclude >>= \case
-          Just muslDir -> return ["-I", fromString muslDir]
-          Nothing      -> do
-            putStr muslWarning
-            return []
-        return $ "-target" : "x86_64-pc-linux" : includeArgs
-
-  let extendedInts = [ PtrDiff ]
+      targetArgs = case platformOS hostPlatform of
+        Windows -> [ "-target", "x86_64-unknown-mingw32" ]
+        Posix
+          -- On macOS, test against the native target and the system SDK headers
+          -- rather than cross-compiling to Linux (for which the headers are
+          -- absent). Linux uses an explicit target for reproducibility.
+          | Info.os == "darwin" -> []
+          | otherwise           -> [ "-target", "x86_64-pc-linux" ]
+      clangArgs = Clang.ClangArgs $ stdClangArg : targetArgs ++ resourceDirArgs
+      extendedInts = [ PtrDiff ]
   canonTys <-
     getExpansionTypeMapping clangArgs
       [ CType $ Arithmetic $ Integral $ IntLike extInt
@@ -122,13 +89,42 @@ main = do
         return Nothing
       else do
         putStrLn $ unlines $
-          ( "   FAILED:" )
+            "   FAILED:"
           : map ( showFailure . first show ) bad
         return $ Just bad
   if null badUnary && null badBinary
   then exitSuccess
   else exitFailure
 
+
+-- | Ask the @clang@ on @PATH@ for its resource directory, returning it as
+-- @-resource-dir@ arguments for @libclang@.
+--
+-- The resource directory holds the compiler builtin headers (@stddef.h@,
+-- @stdint.h@, ...). When @libclang@ is loaded from a relocated toolchain — as
+-- it is on CI, where the LLVM tarball is extracted into a temporary directory —
+-- it cannot find these on its own. The first @#include@ then fails, which
+-- (since a single severe diagnostic discards the whole translation unit) makes
+-- every type query return @<n/a>@. Pointing @libclang@ at the resource
+-- directory explicitly avoids this; it does /not/ affect the search for system
+-- headers, which Clang still derives from the target.
+--
+-- The @clang@ on @PATH@ comes from the same toolchain as the loaded @libclang@,
+-- so its resource directory is the right one. If the lookup fails we warn and
+-- fall back to @libclang@'s own resolution.
+clangResourceDirArgs :: IO [ String ]
+clangResourceDirArgs = do
+  ( ec, out, _err ) <- readProcessWithExitCode "clang" [ "-print-resource-dir" ] ""
+  case ec of
+    ExitSuccess
+      | dir@( _ : _ ) <- dropWhileEnd isSpace ( dropWhile isSpace out )
+      -> return [ "-resource-dir", dir ]
+    _ -> do
+      putStrLn $
+        "WARNING: could not determine Clang's resource directory via "
+          ++ "`clang -print-resource-dir`; falling back to libclang's own "
+          ++ "resolution. Builtin headers (stddef.h, ...) may not be found."
+      return []
 
 showFailure :: ( String, ( Maybe CType, Maybe CType ) ) -> String
 showFailure ( input, ( mbOurs, mbClang ) ) =

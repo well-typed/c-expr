@@ -263,7 +263,7 @@ funName = \case
     FunVar   n  -> getName n
     FunVaFun mf -> Text.pack ( show mf )
 
-typFunName :: TyFun n -> FunName
+typFunName :: TyQual n -> FunName
 typFunName = \case
     Pointer -> "pointer (*)"
     Const   -> "const qualifier (const)"
@@ -807,7 +807,7 @@ inferLit = \case
       String
 
 inferTyApp ::
-     TyFun n
+     TyQual n
   -> Vec nbArgs ( Expr ctx Ps )
   -> TcGenM ( Vec nbArgs ( Expr ctx Tc ), Type Ty )
 inferTyApp fun args = do
@@ -897,7 +897,7 @@ inferLam funNm params body = do
 
 -- Unlike value functions, functions on the type level are always monomorphic,
 -- so we don't need a 'Quant'.
-inferTyFun :: TyFun n -> Type Ty
+inferTyFun :: TyQual n -> Type Ty
 inferTyFun fun = case fun of
     -- Pointer: MacroType -> MacroType
     Pointer -> mkFunTy [MacroTypeTy] MacroTypeTy
