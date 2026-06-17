@@ -12,14 +12,11 @@ import Control.Arrow (first)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes)
-import Data.String (IsString (fromString))
 import Data.Text qualified as Text (pack)
 import Data.Traversable (for)
 import Data.Type.Nat
 import Data.Vec.Lazy (Vec (..))
-import System.Directory (doesDirectoryExist, getCurrentDirectory)
 import System.Exit
-import System.FilePath (takeDirectory, (</>))
 
 import C.Type
 import C.Type.Internal.Universe
@@ -32,54 +29,14 @@ import CallClang (CType (..), getExpansionTypeMapping, queryClangForResultType)
 
 --------------------------------------------------------------------------------
 
--- | The bundled @musl@ standard library headers we pass to Clang for the
--- testsuite, so that results do not depend on whichever C headers happen to be
--- installed on the host. They live in @c-expr-runtime/musl-include@ (an
--- @extra-source-file@, not installed for library consumers), so we locate them
--- relative to the working directory: @cabal test@ runs in the package
--- directory, but we also search ancestors so the lookup is robust.
-findMuslInclude :: IO (Maybe FilePath)
-findMuslInclude = getCurrentDirectory >>= go
-  where
-    go :: FilePath -> IO (Maybe FilePath)
-    go dir = do
-      let candidate = dir </> "musl-include" </> "x86_64"
-      here <- doesDirectoryExist candidate
-      if here
-        then return (Just candidate)
-        else let parent = takeDirectory dir
-             in if parent == dir then return Nothing else go parent
-
--- | A hard-to-miss warning printed when the bundled @musl@ headers cannot be
--- found and we fall back to the host's system headers.
-muslWarning :: String
-muslWarning = unlines
-  [ "#############################################################################"
-  , "##                                                                         ##"
-  , "##  WARNING: bundled musl headers ('musl-include/x86_64') not found!       ##"
-  , "##                                                                         ##"
-  , "##  Falling back to whatever C system headers exist on this machine.       ##"
-  , "##  Results may differ from the musl-based reference and tests may fail    ##"
-  , "##  spuriously. Make sure 'c-expr-runtime/musl-include' is present.        ##"
-  , "##                                                                         ##"
-  , "#############################################################################"
-  ]
-
 main :: IO ()
 main = do
   let stdClangArg = "-std=c17"  -- C23 arg depends on libclang version
-  clangArgs <- fmap (Clang.ClangArgs . (stdClangArg :)) $
-    case platformOS hostPlatform of
-      Windows -> return ["-target", "x86_64-unknown-mingw32"]  -- GHC target
-      Posix -> do
-        includeArgs <- findMuslInclude >>= \case
-          Just muslDir -> return ["-I", fromString muslDir]
-          Nothing      -> do
-            putStr muslWarning
-            return []
-        return $ "-target" : "x86_64-pc-linux" : includeArgs
-
-  let extendedInts = [ PtrDiff ]
+      targetArgs = case platformOS hostPlatform of
+        Windows -> ["-target", "x86_64-unknown-mingw32"]
+        Posix   -> ["-target", "x86_64-pc-linux"]
+      clangArgs = Clang.ClangArgs $ stdClangArg : targetArgs
+      extendedInts = [ PtrDiff ]
   canonTys <-
     getExpansionTypeMapping clangArgs
       [ CType $ Arithmetic $ Integral $ IntLike extInt

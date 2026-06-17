@@ -19,7 +19,7 @@ module C.Expr.Syntax (
     -- ** Expressions
   , Name(..)
   , Expr(..)
-  , TyFun(..)
+  , TyQual(..)
   , VaFun(..)
   , ValueLit(..)
   , Literal(..)
