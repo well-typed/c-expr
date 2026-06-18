@@ -17,7 +17,6 @@ module C.Expr.Typecheck.Type (
   , Tc
     -- * Type inference
   , TypeEnv
-  , buildTypedefEnv
   , ParamEnv
     -- ** Type system
   , Type(..)
@@ -102,11 +101,9 @@ import Data.IntMap (IntMap)
 import Data.Kind qualified as Hs
 import Data.List.NonEmpty qualified as NE
 import Data.Map (Map)
-import Data.Map qualified as Map
 import Data.Maybe (fromJust)
 import Data.Nat (Nat (..))
 import Data.Proxy
-import Data.Set (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Type.Equality
@@ -123,6 +120,7 @@ import Numeric.Natural
 import C.Type qualified as Runtime
 
 import C.Expr.Syntax
+import C.Expr.Syntax.Name
 import C.Expr.Util.TestEquality
 
 {-------------------------------------------------------------------------------
@@ -466,31 +464,10 @@ instance Show ( ClassTyCon n ) where
 
 -- | The typing environment: every in-scope name (@typedef@ or previously
 -- typechecked macro) mapped to its quantified type.
-type TypeEnv  = Map Name ( Quant ( FunValue, Type Ty ) )
+type TypeEnv  = Map Identifier ( Quant ( FunValue, Type Ty ) )
 -- | De Bruijn indexed environment of parameters /local to the macro
 -- definition/.
 type ParamEnv = IntMap   ( Type Ty )
-
--- | Build a 'TypeEnv' from a list of typedef names.
---
--- Each name is registered as a type alias (with kind 'MacroTypeTy') and a
--- dummy 'FunValue' that is never invoked.
---
--- Note: @struct@, @union@, and @enum@ types should /not/ be added here.
--- Tagged types always parse as 'TypeTagged' literals, never as bare 'Var'
--- nodes, so they are resolved through the @injectTagged@ callback of
--- 'C.Expr.Typecheck.tcMacros' instead.
-
--- TODO <https://github.com/well-typed/c-expr/issues/7>
---
--- Should simplify significantly when we use @'Maybe' 'FunValue'@.
-buildTypedefEnv :: Set Name -> TypeEnv
-buildTypedefEnv =
-    Map.fromSet $ \nm ->
-      Quant @Z $ \VNil ->
-        QuantTyBody []
-          ( FunValue @Z (getName nm) (\VNil -> NoValue)
-          , MacroTypeTy )
 
 {-------------------------------------------------------------------------------
   Pass definition
@@ -502,7 +479,7 @@ data Tc a
 newtype instance XApp Tc = XAppTc FunValue
   deriving stock ( Eq, Show, Generic )
 
-data instance XVar Tc = XVarTc FunValue
+newtype instance XVar Tc = XVarTc FunValue
   deriving stock ( Eq, Show, Generic )
 
 -- | A singleton for the type of a value, for use in evaluation of macros.
@@ -552,10 +529,14 @@ witnessValSType ( ValSType ty ) f =
 --   void foo(int arr[M(N) + N]);
 -- @
 data FunValue where
-  FunValue :: SNatI n => FunName -> ( Vec n Value -> Value ) -> FunValue
+  NoFunValue :: FunValue
+  FunValue   :: SNatI n => FunName -> ( Vec n Value -> Value ) -> FunValue
 instance Eq FunValue where
+  NoFunValue    == NoFunValue    = True
   FunValue f1 _ == FunValue f2 _ = f1 == f2
+  _             == _             = False
 instance Show FunValue where
+  show   NoFunValue      = "NoFunValue"
   show ( FunValue nm _ ) = Text.unpack nm
 
 {-------------------------------------------------------------------------------
@@ -592,9 +573,9 @@ pprCtOrigin = \case
 -- | Why did we create a new metavariable?
 data MetaOrigin
   = ExpectedFunTyResTy !FunName
-  | ExpectedVarTy !Name
+  | ExpectedVarTy !Identifier
   | Inst { instOrigin :: !InstOrigin, instPos :: !Int }
-  | FunParam !Name !( Name, Natural )
+  | FunParam !Identifier !( Identifier, Natural )
   | IntLitMeta !IntegerLiteral
   | FloatLitMeta !FloatingLiteral
 
@@ -609,12 +590,12 @@ pprMetaOrigin :: MetaOrigin -> Text
 pprMetaOrigin = \case
   ExpectedFunTyResTy funNm ->
     "the result type of '" <> Text.pack ( show funNm ) <> "'"
-  ExpectedVarTy ( Name varNm ) ->
+  ExpectedVarTy ( Identifier varNm ) ->
     "the type of the identifier '" <> varNm <> "'"
   Inst funNm i ->
     "the " <> speakNth i <> " type argument in the instantiation of '" <> Text.pack ( show funNm ) <> "'"
-  FunParam ( Name funNm ) ( param, i ) ->
-    "the type of the " <> speakNth (fromIntegral i) <> " parameter of '" <> funNm <> "' with name '" <> getName param <> "'"
+  FunParam ( Identifier funNm ) ( param, i ) ->
+    "the type of the " <> speakNth (fromIntegral i) <> " parameter of '" <> funNm <> "' with name '" <> getIdentifier param <> "'"
   IntLitMeta i ->
     "the type of the integer literal '" <> Text.pack ( show i ) <> "'"
   FloatLitMeta f ->

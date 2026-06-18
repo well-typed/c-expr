@@ -254,13 +254,13 @@ isAtomicType = \case
 
 data Fun ctx =
     FunLocal ( Idx ctx )
-  | FunVar   Name
+  | FunVar   Identifier
   | forall arity. FunVaFun ( VaFun arity )
 
 funName :: Fun ctx -> FunName
 funName = \case
     FunLocal i  -> Text.pack ( "local_param_" ++ show i )
-    FunVar   n  -> getName n
+    FunVar   n  -> getIdentifier n
     FunVaFun mf -> Text.pack ( show mf )
 
 typFunName :: TyQual n -> FunName
@@ -270,8 +270,10 @@ typFunName = \case
 
 data TcError
   = UnificationError !UnificationError
-  | UnboundVariable  !Name
-  deriving stock Show
+  | UnboundVariable  !Identifier
+  | TaggedNameWithArguments Identifier
+
+deriving stock instance Show TcError
 
 data UnificationError
   = forall k. Typeable k => CouldNotUnify !CouldNotUnifyReason !CtOrigin !( Type k ) !( Type k )
@@ -281,8 +283,10 @@ pprTcError :: TcError -> Text
 pprTcError = \case
   UnificationError err ->
     pprUnificationError err
-  UnboundVariable ( Name nm ) ->
+  UnboundVariable ( Identifier nm ) ->
     "Unbound variable: '" <> nm <> "'"
+  TaggedNameWithArguments name ->
+    "Tagged name with arguments: " <> getIdentifier name
 
 pprUnificationError :: UnificationError -> Text
 pprUnificationError = \case
@@ -381,7 +385,7 @@ getPlatform =
   TcPureM \ ( TcEnv ( TcGblEnv { tcPlatform = plat } ) _ ) ->
     pure plat
 
-lookupTyEnv :: Name -> TcPureM ( Maybe ( Quant ( FunValue, Type Ty ) ) )
+lookupTyEnv :: Identifier -> TcPureM ( Maybe ( Quant ( FunValue, Type Ty ) ) )
 lookupTyEnv varNm = TcPureM \ ( TcEnv ( TcGblEnv { tcTypeEnv } ) _ ) ->
   return $ Map.lookup varNm tcTypeEnv
 
@@ -753,12 +757,13 @@ instantiate ctOrig instOrig body = do
 -------------------------------------------------------------------------------}
 
 -- | Infer the type of a macro declaration (before constraint solving and generalisation).
-inferTop :: Name -> Vec ctx Name -> Expr Name ctx Ps
-         -> TcUniqueM ( ( ( Expr Name ctx Tc, ( Vec ctx ( Type Ty ), Type Ty ) ), Cts )
+inferTop :: Identifier -> Vec ctx Identifier -> Expr var ctx Ps
+         -> TcUniqueM ( ( ( Expr var ctx Tc, ( Vec ctx ( Type Ty ), Type Ty ) ), Cts )
                       , [ ( TcError, SrcSpan ) ] )
 inferTop funNm params body = do
   plat <- lift getPlatform
-  ( ( ( tcBody, ( paramTys, bodyTy ) ), ( cts, mbErrs ) ), subst ) <- runTcGenMTcM ( inferLam funNm params body )
+  ( ( ( tcBody, ( paramTys, bodyTy ) ), ( cts, mbErrs ) ), subst ) <-
+    runTcGenMTcM ( inferLam funNm params body )
   let paramTys' = fmap ( applySubstNormalise plat subst ) paramTys
       bodyTy' = applySubstNormalise plat subst bodyTy
       cts' = map ( first ( applySubstNormalise plat subst ) ) cts
@@ -788,14 +793,18 @@ inferTerm = \case
   LocalParam i ->
     do resTy <- liftTcPureM $ lookupLocalParam i
        return ( resTy, LocalParam i )
-  Var NoXVar fun argsList -> Vec.reifyList argsList $ \ args ->
+  Var NoXVar (NameOrdinary fun) argsList -> Vec.reifyList argsList $ \ args ->
     do ( funVal, ( args', resTy ) ) <- inferVaApp ( FunVar fun ) args
-       return ( resTy, Var ( XVarTc funVal ) fun ( Vec.toList args' ) )
+       return ( resTy, Var ( XVarTc funVal ) (NameOrdinary fun) ( Vec.toList args' ) )
+  Var NoXVar (NameTagged name tag) argsList -> do
+    case argsList of
+      [] -> pure ()
+      _  -> addErrTcGenM $ TaggedNameWithArguments name
+    pure (MacroTypeTy, Var (XVarTc NoFunValue) (NameTagged name tag) [])
 
 inferLit :: Literal -> Type Ty
 inferLit = \case
-  TypeLit{}        -> MacroTypeTy
-  TypeTagged{}     -> MacroTypeTy
+  TypeLit{}      -> MacroTypeTy
   ValueLit vaLit -> case vaLit of
     ValueInt ( IntegerLiteral { integerLiteralType = intyTy } ) ->
       IntLike $ PrimIntInfoTy $ CIntegralType $ Runtime.IntLike intyTy
@@ -819,7 +828,7 @@ inferTyApp fun args = do
     _ ::: _ -> do
       args' <- traverse inferExpr args
       let ( argTys', argExprs ) = ( Vec.toNonEmpty $ fmap fst args', fmap snd args' )
-      resTy <- newMetaTyVarTy ( ExpectedFunTyResTy $ funNm ) "r"
+      resTy <- newMetaTyVarTy ( ExpectedFunTyResTy funNm ) "r"
       let actualTy = FunTy argTys' resTy
       liftUnifyM $ unifyType ( AppOrigin $ funNm ) NotSwapped actualTy funTy
       pure ( argExprs, resTy )
@@ -878,8 +887,8 @@ inferFun f = case f of
 
 -- | Infer the type of a lambda expression.
 inferLam :: forall ctx
-         .  Name         -- ^ name of the function (for error messages)
-         -> Vec ctx Name -- ^ local parameters
+         .  Identifier         -- ^ name of the function (for error messages)
+         -> Vec ctx Identifier -- ^ local parameters
          -> Expr Name ctx Ps  -- ^ function body
          -> TcGenM ( Expr Name ctx Tc, ( Vec ctx ( Type Ty ), Type Ty ) )
 inferLam _ VNil body = do
@@ -890,7 +899,7 @@ inferLam funNm params body = do
     ifor params \ i param  ->
       newMetaTyVarTy
         ( FunParam funNm ( param, Fin.toNatural i ) )
-        ( "ty_" <> getName param )
+        ( "ty_" <> getIdentifier param )
   liftBaseTcM ( declareLocalParams paramTys ) $ do
     ( bodyTy, body' ) <- inferExpr body
     return ( body', ( paramTys, bodyTy ) )
@@ -1818,27 +1827,30 @@ evaluateExpr :: IntMap Value -> TypeEnv -> Expr Name ctx Tc -> Value
 evaluateExpr argVals tyEnv = \case
   Term tm  -> evaluateTerm argVals tyEnv tm
   TyApp{}  -> NoValue
-  VaApp @_ @_ @_ @m ( XAppTc ( FunValue @n _ fn ) ) _funName args ->
-    -- We have stored the function that performs evaluation in the XAppTc
-    -- field of the AST. For example, for addition, we have wrapped
-    --
-    --   singAdd :: SType ty1 -> SType ty2 -> ( SType (AddRes ty1 ty2), ty1 -> ty2 -> AddRes ty1 ty2 )
-    --
-    -- to obtain the function ( fn :: Vec 2 Value -> Value ).
-    Vec.withDict args $
-      case Nat.eqNat @( S m ) @n of
-        Just Refl ->
-          fn $ fmap ( evaluateExpr argVals tyEnv ) args
-        Nothing ->
-          NoValue
+  VaApp @_ @_ @_ @m ( XAppTc funValue ) _funName args -> case funValue of
+    NoFunValue -> NoValue
+    FunValue @n _ fn ->
+      -- We have stored the function that performs evaluation in the XAppTc
+      -- field of the AST. For example, for addition, we have wrapped
+      --
+      --   singAdd :: SType ty1 -> SType ty2 -> ( SType (AddRes ty1 ty2), ty1 -> ty2 -> AddRes ty1 ty2 )
+      --
+      -- to obtain the function ( fn :: Vec 2 Value -> Value ).
+      Vec.withDict args $
+        case Nat.eqNat @( S m ) @n of
+          Just Refl ->
+            fn $ fmap ( evaluateExpr argVals tyEnv ) args
+          Nothing ->
+            NoValue
 
 evaluateTerm :: IntMap Value -> TypeEnv -> Term Name ctx Tc -> Value
 evaluateTerm argVals tyEnv = \case
   Literal x -> evaluateLit x
   -- Local macro parameter, e.g. @X@ in @#define AddOne(X) X+1@.
   LocalParam i -> fromMaybe NoValue $ IntMap.lookup (idxToInt i) argVals
-  Var ( XVarTc ( FunValue @n _ fn ) ) nm args
-    -> Vec.reifyList args $ \ ( argsVec :: Vec m ( Expr Name ctx Tc ) ) ->
+  Var ( XVarTc funValue ) nm args -> case funValue of
+    NoFunValue -> NoValue
+    FunValue @n _ fn -> Vec.reifyList args $ \ ( argsVec :: Vec m ( Expr Name ctx Tc ) ) ->
         case Nat.eqNat @n @m of
           Nothing ->
             panicPure $ unlines
@@ -1882,7 +1894,6 @@ evaluateLit = \case
     ValueString {} -> NoValue
   -- We do not evaluate type functions.
   TypeLit    {} -> NoValue
-  TypeTagged {} -> NoValue
 
 naturalMaybe :: ValSType ty -> ty -> Maybe Natural
 naturalMaybe ( ValSType ty ) i =
@@ -1904,11 +1915,11 @@ naturalMaybe ( ValSType ty ) i =
 -- Also returns the body type (post-inference, pre-quantification) so the
 -- caller can tell whether the macro denotes a type or a value.
 tcExpr ::
-     forall ctx
+     forall var ctx
   .  TypeEnv
-  -> Name         -- ^ name of the macro
-  -> Vec ctx Name -- ^ macro arguments
-  -> Expr Name ctx Ps  -- ^ macro body
+  -> Identifier         -- ^ name of the macro
+  -> Vec ctx Identifier -- ^ macro arguments
+  -> Expr var ctx Ps   -- ^ macro body
   -> Either MacroTcError ( Type Ty, Quant ( FunValue, Type Ty ) )
 tcExpr tyEnv macroNm args body =
   let plat = Runtime.hostPlatform in
@@ -1933,7 +1944,7 @@ tcExpr tyEnv macroNm args body =
         getFVs noBoundVars $
           freeTyVarsOfTypes $
             fmap ( applySubstNormalise plat ctSubst ) $
-              Vec.toList ( argTys ) ++ [ bodyTy ]
+              Vec.toList argTys ++ [ bodyTy ]
       qtvsList = reverse $ seenTvsRevList qtvsFVs
       ctTvs =
         seenTvs $ getFVs noBoundVars $
@@ -1993,7 +2004,7 @@ tcExpr tyEnv macroNm args body =
                 norm = applySubstNormalise plat finalSubst
                 evalFun =
                   Vec.withDict args $
-                    FunValue ( getName macroNm ) $ \ (argVals :: Vec ctx Value) ->
+                    FunValue ( getIdentifier macroNm ) $ \ (argVals :: Vec ctx Value) ->
                       evaluateExpr
                         ( IntMap.fromList $ zip [0..] $ Vec.toList argVals )
                         tyEnv
@@ -2013,12 +2024,12 @@ data MacroTcError
   = TcErrors !( NE.NonEmpty ( TcError, SrcSpan ) )
   -- | A collection of class constraints was inconsistent.
   | TcInconsistentConstraints !( NE.NonEmpty Cts )
-  | TcUnsupportedTypeWithLocalParameters Name [Name]
+  | TcUnsupportedTypeWithLocalParameters Identifier [Identifier]
   -- | A type-like macro reduces to an incomplete type (e.g. @void@,
   -- @const void@) at the top level. Such a type cannot be used to declare
   -- a value, so the macro cannot be translated to a usable Haskell binding.
   -- Pointer-to-incomplete (e.g. @void *@) is fine and is not rejected here.
-  | TcIncompleteTypeMacro Name
+  | TcIncompleteTypeMacro Identifier
   deriving stock ( Show, Generic )
 
 instance Eq MacroTcError where
@@ -2040,10 +2051,10 @@ pprMacroTcError tcMacroErr =
           ]
       TcUnsupportedTypeWithLocalParameters nm ps -> [
           "Unsupported type-like macro expression with local parameters:"
-        , getName nm <> " with parameters " <> Text.pack (show ps)
+        , getIdentifier nm <> " with parameters " <> Text.pack (show ps)
         ]
       TcIncompleteTypeMacro nm -> [
-          "Type-like macro " <> getName nm <> " expands to an incomplete type"
+          "Type-like macro " <> getIdentifier nm <> " expands to an incomplete type"
         , "(such as 'void' or 'const void') at the top level."
         ]
 

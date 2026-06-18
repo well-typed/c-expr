@@ -58,60 +58,35 @@ import C.Expr.Util.Panic
 -- 'MacroTcInjectError'.
 tcMacros ::
      forall var err.
-     Set Name                                -- ^ known typedef names
-  -> (CTypeSource -> Name -> var)            -- ^ inject type name
-  -> (Name                -> var)            -- ^ inject value name
-  -> (TagKind     -> Name -> Except err var) -- ^ inject tagged type name
-  -> [Macro Name]
-  -> Map Name (MacroTcResult err var)
-tcMacros typedefs injectType injectValue injectTaggedType macros =
-    let (_, _, tcRs) = Foldable.foldl' step initEnv macros
+     Ord var
+  => [Macro var]
+     -- TODO-D: Needs to be `var`, otherwise we cannot compare to it when
+     -- typechecking.
+  -> Map Identifier (MacroTcResult err var)
+tcMacros macros =
+    let (_, tcRs) = Foldable.foldl' step initEnv macros
     in  tcRs
   where
-    initCTypeSources :: Map Name CTypeSource
-    initCTypeSources = Map.fromSet (const FromTypedef) typedefs
-
-    initEnv :: (TypeEnv, Map Name CTypeSource, Map Name a)
-    initEnv = (buildTypedefEnv typedefs, initCTypeSources, Map.empty)
+    -- Scope checking has happened, so all names must be in scope.
+    initEnv :: (TypeEnv, Map Identifier a)
+    initEnv = (Map.empty, Map.empty)
 
     step ::
-         (TypeEnv, Map Name CTypeSource, Map Name (MacroTcResult err var))
-      -> Macro Name
-      -> (TypeEnv, Map Name CTypeSource, Map Name (MacroTcResult err var))
-    step (env, typeSources, acc) (Macro _loc name params body) =
-      let injectTypeWithSource :: Name -> var
-          injectTypeWithSource nm =
-            injectType (lookupCTypeSource typeSources nm) nm
-          eRes =
-            runExcept $
-              tcMacroOne env
-                injectTypeWithSource
-                injectValue
-                injectTaggedType
-                name params body
+         (TypeEnv, Map Identifier (MacroTcResult err var))
+      -> Macro var
+      -> (TypeEnv, Map Identifier (MacroTcResult err var))
+    step (env, acc) (Macro _loc name params body) =
+      let eRes = runExcept $ tcMacroOne env name params body
           result :: MacroTcResult err var
           result = case eRes of
             Left injE -> MacroTcInjectError injE
             Right r   -> r
-          (env', typeSources') = case result of
-            MacroTcTypeExpr cmt ->
-              ( Map.insert name (macroTypeType  cmt) env
-              , Map.insert name FromMacroType typeSources )
-            MacroTcValueExpr cmv ->
-              ( Map.insert name (macroValueType cmv) env
-              , typeSources )
-            MacroTcInjectError _ ->
-              (env, typeSources)
-            MacroTcError       _ ->
-              (env, typeSources)
-      in  (env', typeSources', Map.insert name result acc)
-
-    -- Resolve the 'CTypeSource' of a type-position name. A missing entry means
-    -- the name is value-like or unknown, indicating a bug in the type checker.
-    lookupCTypeSource :: Map Name CTypeSource -> Name -> CTypeSource
-    lookupCTypeSource typeSources nm = case Map.lookup nm typeSources of
-      Just k  -> k
-      Nothing -> panicPure $ "tcMacros: unavailable type source: " <> show nm
+          env' = case result of
+            MacroTcTypeExpr  cmt -> Map.insert name (macroTypeType  cmt) env
+            MacroTcValueExpr cmv -> Map.insert name (macroValueType cmv) env
+            MacroTcInjectError _ -> env
+            MacroTcError       _ -> env
+      in  (env', Map.insert name result acc)
 
 {-------------------------------------------------------------------------------
   Types
@@ -130,7 +105,7 @@ data TypecheckedMacroTypeExpr var = TypecheckedMacroTypeExpr{
 
 -- | The macro is a value expression (e.g., @#define BAR 1@).
 data TypecheckedMacroValueExpr var = forall ctx. TypecheckedMacroValueExpr{
-      macroValueParams :: Vec ctx Name
+      macroValueParams :: Vec ctx Identifier
     , macroValueBody   :: V.Expr ctx var
       -- TODO <https://github.com/well-typed/c-expr/issues/8>
       --
@@ -175,14 +150,11 @@ tcMacroOne ::
      forall m ctx var err.
      Applicative m
   => TypeEnv
-  -> (Name            ->   var)
-  -> (Name            ->   var)
-  -> (TagKind -> Name -> m var)
-  -> Name
-  -> Vec ctx Name
-  -> Expr Name ctx Ps
+  -> Identifier
+  -> Vec ctx Identifier
+  -> Expr var ctx Ps
   -> m (MacroTcResult err var)
-tcMacroOne tyEnv injectType injectValue injectTaggedType name params expr =
+tcMacroOne tyEnv name params expr =
     case tcExpr tyEnv name params expr of
       Left  err -> pure $ MacroTcError err
       Right res -> classify res
@@ -201,12 +173,12 @@ tcMacroOne tyEnv injectType injectValue injectTaggedType name params expr =
               MacroTcError $ TcIncompleteTypeMacro name
             else
               MacroTcTypeExpr $ TypecheckedMacroTypeExpr texpr quant
-          ) <$> T.fromExpr injectType injectTaggedType expr
+          ) <$> T.fromExpr expr
       (_, quant) ->
         pure $
           (\vexpr -> MacroTcValueExpr $
             TypecheckedMacroValueExpr params vexpr quant) $
-              V.fromExpr injectValue expr
+              V.fromExpr expr
 
     -- | An incomplete type at the top level of a type-like macro: 'void' or
     -- 'const'-wrapped 'void'. Pointer indirection makes the type complete, so

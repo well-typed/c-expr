@@ -54,7 +54,7 @@ instance Exception ConversionError
 
 fromExpr ::
      forall ctx var p.
-     (Name -> var)
+     (Identifier -> var)
   -> M.Expr Name ctx p
   -> Expr ctx var
 fromExpr injectValue = go
@@ -65,8 +65,9 @@ fromExpr injectValue = go
         fromLit x
       M.Term (M.LocalParam i) ->
         LocalParam i
-      M.Term (M.Var _ nm args) ->
-        Var (injectValue nm) (map go args)
+      M.Term (M.Var _ nm args) -> case nm of
+        NameOrdinary nm' -> Var (injectValue nm') (map go args)
+        nm'@NameTagged{} -> panicPure $ show $ UnexpectedTypeInValue (show nm')
       M.TyApp fun _ ->
         panicPure $ show $ UnexpectedTypeFunctionApplicationInValue (show fun)
       M.VaApp _ fun args ->
@@ -76,8 +77,6 @@ fromExpr injectValue = go
     fromLit = \case
       M.TypeLit x ->
         panicPure $ show $ UnexpectedTypeInValue (show x)
-      M.TypeTagged tag nm ->
-        panicPure $ show $ UnexpectedTypeInValue (show (tag, nm))
       M.ValueLit x -> Literal $ case x of
         M.ValueInt y    -> M.ValueInt y
         M.ValueFloat y  -> M.ValueFloat y

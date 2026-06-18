@@ -12,11 +12,12 @@ module C.Expr.Syntax (
     Macro(..)
     -- ** Type syntax
   , TypeLit(..)
-  , TagKind(..)
   , Sign(..)
   , IntSize(..)
   , FloatSize(..)
     -- ** Expressions
+  , Identifier(..)
+  , TagKind(..)
   , Name(..)
   , Expr(..)
   , TyQual(..)
@@ -55,8 +56,10 @@ import Clang.HighLevel.Types
 type Macro :: Hs.Type -> Hs.Type
 data Macro var = forall (ctx :: Ctx). Macro {
       macroLoc    :: MultiLoc
-    , macroName   :: Name
-    , macroParams :: Vec ctx Name
+      -- TODO-D: Needs to be `var`, otherwise we cannot compare to it when
+      -- typechecking.
+    , macroName   :: Identifier
+    , macroParams :: Vec ctx Identifier
     , macroExpr   :: Expr var ctx Ps
     }
 
