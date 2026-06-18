@@ -118,6 +118,4 @@ test-suite tests
     , vec
 
   -- External dependencies
-  build-depends:
-    , process  >=1.6 && <1.7
-    , text     >=1.2 && <2.2
+  build-depends:  text >=1.2 && <2.2
