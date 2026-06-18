@@ -55,11 +55,11 @@ instance Exception ConversionError
 fromExpr ::
      forall ctx var p.
      (Name -> var)
-  -> M.Expr ctx p
+  -> M.Expr Name ctx p
   -> Expr ctx var
 fromExpr injectValue = go
   where
-    go :: M.Expr ctx p -> Expr ctx var
+    go :: M.Expr Name ctx p -> Expr ctx var
     go = \case
       M.Term (M.Literal x) ->
         fromLit x

@@ -64,7 +64,7 @@ mkToken kind spelling = Token{
 --
 -- Adds 'eof' so that trailing tokens are rejected as parse failures.
 checkType ::
-  ClangCStandard -> [Token TokenSpelling] -> Either MacroParseError (Expr Z Ps)
+  ClangCStandard -> [Token TokenSpelling] -> Either MacroParseError (Expr Name Z Ps)
 checkType cStd = runParser (parseMacroType cStd VNil <* eof)
 
 -- | Run the macro parser on a complete token sequence
@@ -72,7 +72,7 @@ checkType cStd = runParser (parseMacroType cStd VNil <* eof)
 -- The first token must be the macro name (an identifier).  'parseMacro'
 -- itself calls 'eof', so no trailing tokens are allowed.
 checkMacro ::
-  ClangCStandard -> [Token TokenSpelling] -> Either MacroParseError Macro
+  ClangCStandard -> [Token TokenSpelling] -> Either MacroParseError (Macro Name)
 checkMacro cStd = runParser (parseMacro cStd)
 
 -- | Run a parser on a list of (kind, spelling) pairs and print the result.
@@ -91,5 +91,5 @@ parseTestWith p pairs = print $ runParser p (map (uncurry mkToken) pairs)
   Results
 -------------------------------------------------------------------------------}
 
-tyLit :: TypeLit -> Expr ctx Ps
+tyLit :: TypeLit -> Expr Name ctx Ps
 tyLit = Term . Literal . TypeLit

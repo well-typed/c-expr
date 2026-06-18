@@ -753,8 +753,8 @@ instantiate ctOrig instOrig body = do
 -------------------------------------------------------------------------------}
 
 -- | Infer the type of a macro declaration (before constraint solving and generalisation).
-inferTop :: Name -> Vec ctx Name -> Expr ctx Ps
-         -> TcUniqueM ( ( ( Expr ctx Tc, ( Vec ctx ( Type Ty ), Type Ty ) ), Cts )
+inferTop :: Name -> Vec ctx Name -> Expr Name ctx Ps
+         -> TcUniqueM ( ( ( Expr Name ctx Tc, ( Vec ctx ( Type Ty ), Type Ty ) ), Cts )
                       , [ ( TcError, SrcSpan ) ] )
 inferTop funNm params body = do
   plat <- lift getPlatform
@@ -771,7 +771,7 @@ inferTop funNm params body = do
     ]
   return ( ( ( tcBody, ( paramTys', bodyTy' ) ), cts' ), mbErrs )
 
-inferExpr :: Expr ctx Ps -> TcGenM ( Type Ty, Expr ctx Tc )
+inferExpr :: Expr Name ctx Ps -> TcGenM ( Type Ty, Expr Name ctx Tc )
 inferExpr = \case
   Term tm -> second Term <$> inferTerm tm
   TyApp fun args -> do
@@ -781,7 +781,7 @@ inferExpr = \case
     ( funVal, ( args', resTy ) ) <- inferVaApp ( FunVaFun fun ) args
     return ( resTy, VaApp ( XAppTc funVal ) fun args' )
 
-inferTerm :: Term ctx Ps -> TcGenM ( Type Ty, Term ctx Tc )
+inferTerm :: Term Name ctx Ps -> TcGenM ( Type Ty, Term Name ctx Tc )
 inferTerm = \case
   Literal x ->
     pure (inferLit x, Literal x)
@@ -808,8 +808,8 @@ inferLit = \case
 
 inferTyApp ::
      TyQual n
-  -> Vec nbArgs ( Expr ctx Ps )
-  -> TcGenM ( Vec nbArgs ( Expr ctx Tc ), Type Ty )
+  -> Vec nbArgs ( Expr Name ctx Ps )
+  -> TcGenM ( Vec nbArgs ( Expr Name ctx Tc ), Type Ty )
 inferTyApp fun args = do
   let funTy = inferTyFun fun
   -- The handling of arguments is duplicated in 'inferVaApp'.
@@ -831,8 +831,8 @@ inferTyApp fun args = do
 -- Also returns a 'FunValue', which allows evaluating the instantiated function.
 inferVaApp ::
      Fun ctx
-  -> Vec nbArgs ( Expr ctx Ps )
-  -> TcGenM ( FunValue, ( Vec nbArgs ( Expr ctx Tc ), Type Ty ) )
+  -> Vec nbArgs ( Expr Name ctx Ps )
+  -> TcGenM ( FunValue, ( Vec nbArgs ( Expr Name ctx Tc ), Type Ty ) )
 inferVaApp fun args = do
   ( funVal, funTy ) <- inferFun fun
   -- The handling of arguments is duplicated in 'inferTyApp'.
@@ -880,8 +880,8 @@ inferFun f = case f of
 inferLam :: forall ctx
          .  Name         -- ^ name of the function (for error messages)
          -> Vec ctx Name -- ^ local parameters
-         -> Expr ctx Ps  -- ^ function body
-         -> TcGenM ( Expr ctx Tc, ( Vec ctx ( Type Ty ), Type Ty ) )
+         -> Expr Name ctx Ps  -- ^ function body
+         -> TcGenM ( Expr Name ctx Tc, ( Vec ctx ( Type Ty ), Type Ty ) )
 inferLam _ VNil body = do
   ( bodyTy, body' ) <- inferExpr body
   return ( body', ( VNil, bodyTy) )
@@ -1814,11 +1814,11 @@ This is easier than erasing the types and dealing with typeclass specialisation,
 which is what GHC does.
 -}
 
-evaluateExpr :: IntMap Value -> TypeEnv -> Expr ctx Tc -> Value
+evaluateExpr :: IntMap Value -> TypeEnv -> Expr Name ctx Tc -> Value
 evaluateExpr argVals tyEnv = \case
   Term tm  -> evaluateTerm argVals tyEnv tm
   TyApp{}  -> NoValue
-  VaApp @_ @_ @m ( XAppTc ( FunValue @n _ fn ) ) _funName args ->
+  VaApp @_ @_ @_ @m ( XAppTc ( FunValue @n _ fn ) ) _funName args ->
     -- We have stored the function that performs evaluation in the XAppTc
     -- field of the AST. For example, for addition, we have wrapped
     --
@@ -1832,13 +1832,13 @@ evaluateExpr argVals tyEnv = \case
         Nothing ->
           NoValue
 
-evaluateTerm :: IntMap Value -> TypeEnv -> Term ctx Tc -> Value
+evaluateTerm :: IntMap Value -> TypeEnv -> Term Name ctx Tc -> Value
 evaluateTerm argVals tyEnv = \case
   Literal x -> evaluateLit x
   -- Local macro parameter, e.g. @X@ in @#define AddOne(X) X+1@.
   LocalParam i -> fromMaybe NoValue $ IntMap.lookup (idxToInt i) argVals
   Var ( XVarTc ( FunValue @n _ fn ) ) nm args
-    -> Vec.reifyList args $ \ ( argsVec :: Vec m ( Expr ctx Tc ) ) ->
+    -> Vec.reifyList args $ \ ( argsVec :: Vec m ( Expr Name ctx Tc ) ) ->
         case Nat.eqNat @n @m of
           Nothing ->
             panicPure $ unlines
@@ -1908,7 +1908,7 @@ tcExpr ::
   .  TypeEnv
   -> Name         -- ^ name of the macro
   -> Vec ctx Name -- ^ macro arguments
-  -> Expr ctx Ps  -- ^ macro body
+  -> Expr Name ctx Ps  -- ^ macro body
   -> Either MacroTcError ( Type Ty, Quant ( FunValue, Type Ty ) )
 tcExpr tyEnv macroNm args body =
   let plat = Runtime.hostPlatform in

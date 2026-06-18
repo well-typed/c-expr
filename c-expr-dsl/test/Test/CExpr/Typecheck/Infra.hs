@@ -37,7 +37,7 @@ import C.Expr.Util.Panic
 
 import Test.CExpr.Util
 
-type MacDef = (Name, Expr Z Ps)
+type MacDef = (Name, Expr Name Z Ps)
 
 -- | Run 'tcMacros' on a single macro
 --
@@ -47,7 +47,7 @@ classifyOne ::
      forall ctx.
      Name
   -> Vec ctx Name
-  -> Expr ctx Ps
+  -> Expr Name ctx Ps
   -> MacroTcResult Void Name
 classifyOne name params body =
     case Map.toList (runTcMacros [Macro fakeLoc name params body]) of
@@ -66,7 +66,7 @@ runTcSeq defs =
 --
 -- Tagged-type injection never fails here (uses 'Void' as the inject error
 -- type), so 'MacroTcInjectError' results are not produced.
-runTcMacros :: [Macro] -> Map Name (MacroTcResult Void Name)
+runTcMacros :: [Macro Name] -> Map Name (MacroTcResult Void Name)
 runTcMacros macros =
     tcMacros Set.empty (const id) id injectTaggedName macros
   where
@@ -95,32 +95,32 @@ assertValueMacro :: (Show e, Show a) => MacroTcResult e a -> Assertion
 assertValueMacro r =
     assertBool ("expected MacroTcValueExpr, got: " ++ show r) (isValueMacro r)
 
-tyLit :: TypeLit -> Expr ctx Ps
+tyLit :: TypeLit -> Expr Name ctx Ps
 tyLit = Term . Literal . TypeLit
 
-constOf :: Expr ctx Ps -> Expr ctx Ps
+constOf :: Expr Name ctx Ps -> Expr Name ctx Ps
 constOf e = TyApp Const (e ::: VNil)
 
-ptrOf :: Expr ctx Ps -> Expr ctx Ps
+ptrOf :: Expr Name ctx Ps -> Expr Name ctx Ps
 ptrOf e = TyApp Pointer (e ::: VNil)
 
 -- | Construct an integer literal expression with a 'signed int' type hint.
 -- Suitable for tests where the exact inferred integer type is not the subject
 -- under test.
-intLit :: Integer -> Expr ctx Ps
+intLit :: Integer -> Expr Name ctx Ps
 intLit n = Term $ Literal $ ValueLit $ ValueInt $
     IntegerLiteral
       (Runtime.Int Runtime.Signed)
       n
 
-add :: Expr ctx Ps -> Expr ctx Ps -> Expr ctx Ps
+add :: Expr Name ctx Ps -> Expr Name ctx Ps -> Expr Name ctx Ps
 add a b = VaApp NoXApp MAdd (a ::: b ::: VNil)
 
-shiftLeft :: Expr ctx Ps -> Expr ctx Ps -> Expr ctx Ps
+shiftLeft :: Expr Name ctx Ps -> Expr Name ctx Ps -> Expr Name ctx Ps
 shiftLeft a b = VaApp NoXApp MShiftLeft (a ::: b ::: VNil)
 
-mlocal :: Idx ctx -> Expr ctx Ps
+mlocal :: Idx ctx -> Expr Name ctx Ps
 mlocal i = Term $ LocalParam i
 
-mvar :: Name -> Expr ctx Ps
+mvar :: Name -> Expr Name ctx Ps
 mvar n = Term $ Var NoXVar n []

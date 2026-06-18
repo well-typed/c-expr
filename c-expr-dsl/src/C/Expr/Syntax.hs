@@ -52,16 +52,16 @@ import C.Expr.Syntax.Type
 
 import Clang.HighLevel.Types
 
-type Macro :: Hs.Type
-data Macro = forall (ctx :: Ctx). Macro {
+type Macro :: Hs.Type -> Hs.Type
+data Macro var = forall (ctx :: Ctx). Macro {
       macroLoc    :: MultiLoc
     , macroName   :: Name
     , macroParams :: Vec ctx Name
-    , macroExpr   :: Expr ctx Ps
+    , macroExpr   :: Expr var ctx Ps
     }
 
-instance Eq Macro where
-  (Macro @c1 loc1 n1 p1 e1) == (Macro @c2 loc2 n2 p2 e2) =
+instance Eq var => Eq (Macro var) where
+  (Macro @_ @c1 loc1 n1 p1 e1) == (Macro @_ @c2 loc2 n2 p2 e2) =
       loc1 == loc2 && n1   == n2 && eqBody
     where
       eqBody = withDict p1 $ withDict p2 $
@@ -69,4 +69,13 @@ instance Eq Macro where
           Just Refl -> p1 == p2 && e1 == e2
           Nothing   -> False
 
-deriving stock instance Show Macro
+deriving stock instance (Show var) => Show (Macro var)
+
+instance Functor Macro where
+  fmap f Macro{macroLoc, macroName, macroParams, macroExpr} =
+    Macro {
+        macroLoc
+      , macroName
+      , macroParams
+      , macroExpr = mapExprVar f macroExpr
+      }

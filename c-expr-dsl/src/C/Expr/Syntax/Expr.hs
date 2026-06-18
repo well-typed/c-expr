@@ -12,6 +12,9 @@ module C.Expr.Syntax.Expr (
   , ValueLit(..)
   , Literal(..)
   , Term(..)
+    -- * Functor-like instances
+  , mapExprVar
+  , mapTermVar
   ) where
 
 import Data.GADT.Compare (GEq (geq))
@@ -39,21 +42,21 @@ import C.Expr.Util.TestEquality
 -- | Macro expression
 --
 -- For examples, see the extensive test suite "Test.CExpr.Parse".
-type Expr :: Ctx -> Pass -> Type
-data Expr ctx p
+type Expr :: Type -> Ctx -> Pass -> Type
+data Expr var ctx p
   -- | A term that is not a function application.
-  = Term ( Term ctx p )
+  = Term ( Term var ctx p )
   -- | Exactly saturated non-nullary type-level function application.
   --
   -- We don't need an extension point here, because we do not need to evaluate
   -- type functions in Haskell. 'XApp' may be unnecessary if we can remove
   -- 'FunValue'.
-  | forall n. TyApp             ( TyQual ( S n ) ) ( Vec ( S n ) ( Expr ctx p ) )
+  | forall n. TyApp             ( TyQual ( S n ) ) ( Vec ( S n ) ( Expr var ctx p ) )
   -- | Exactly saturated non-nullary function application.
-  | forall n. VaApp !( XApp p ) ( VaFun ( S n ) ) ( Vec ( S n ) ( Expr ctx p ) )
-deriving stock instance ( Show ( XVar p ), Show ( XApp p ) ) => Show ( Expr ctx p )
+  | forall n. VaApp !( XApp p ) ( VaFun  ( S n ) ) ( Vec ( S n ) ( Expr var ctx p ) )
+deriving stock instance ( Show var, Show ( XVar p ), Show ( XApp p ) ) => Show ( Expr var ctx p )
 
-instance ( Eq ( XApp p ), Eq ( XVar p ) ) => Eq ( Expr ctx p ) where
+instance ( Eq var, Eq ( XApp p ), Eq ( XVar p ) ) => Eq ( Expr var ctx p ) where
   Term m1 == Term m2 = m1 == m2
   TyApp f1 args1 == TyApp f2 args2
     | Just Refl <- f1 `equals1` f2
@@ -67,15 +70,15 @@ instance ( Eq ( XApp p ), Eq ( XVar p ) ) => Eq ( Expr ctx p ) where
     = False
   _ == _ = False
 
-instance ( Ord ( XApp p ), Ord ( XVar p ) ) => Ord ( Expr ctx p ) where
+instance ( Ord var, Ord ( XApp p ), Ord ( XVar p ) ) => Ord ( Expr var ctx p ) where
   compare ( Term m1 ) ( Term m2 ) = compare m1 m2
-  compare ( TyApp @_ @_ @n1 f1 args1 ) ( TyApp @_ @_ @n2 f2 args2 ) =
+  compare ( TyApp @_ @_ @_ @n1 f1 args1 ) ( TyApp @_ @_ @_ @n2 f2 args2 ) =
     Vec.withDict args1 $ Vec.withDict args2 $
     case Nat.eqNat @( S n1 ) @( S n2 ) of
       Just Refl -> compare f1 f2 <> compare args1 args2
       Nothing ->
         compare ( Nat.reflect @( S n1 ) Proxy ) ( Nat.reflect @( S n2 ) Proxy )
-  compare ( VaApp @_ @_ @n1 x1 f1 args1 ) ( VaApp @_ @_ @n2 x2 f2 args2 ) =
+  compare ( VaApp @_ @_ @_ @n1 x1 f1 args1 ) ( VaApp @_ @_ @_ @n2 x2 f2 args2 ) =
     Vec.withDict args1 $ Vec.withDict args2 $
     case Nat.eqNat @( S n1 ) @( S n2 ) of
       Just Refl -> compare f1 f2 <> compare x1 x2 <> compare args1 args2
@@ -219,8 +222,8 @@ data Literal =
   | TypeTagged !TagKind !Name
   deriving stock (Eq, Ord, Show)
 
-type Term :: Ctx -> Pass -> Type
-data Term ctx p =
+type Term :: Type -> Ctx -> Pass -> Type
+data Term var ctx p =
     -- | Literal (i.e., constant) type or value
     Literal Literal
 
@@ -235,8 +238,24 @@ data Term ctx p =
   | LocalParam (Idx ctx)
 
     -- | Free variable: another macro or typedef
-  | Var ( XVar p ) Name [Expr ctx p]
+  | Var ( XVar p ) var [Expr var ctx p]
   deriving stock Generic
-deriving stock instance ( Eq   ( XApp p ), Eq   ( XVar p ) ) => Eq   ( Term ctx p )
-deriving stock instance ( Ord  ( XApp p ), Ord  ( XVar p ) ) => Ord  ( Term ctx p )
-deriving stock instance ( Show ( XApp p ), Show ( XVar p ) ) => Show ( Term ctx p )
+deriving stock instance ( Eq   var, Eq   ( XApp p ), Eq   ( XVar p ) ) => Eq   ( Term var ctx p )
+deriving stock instance ( Ord  var, Ord  ( XApp p ), Ord  ( XVar p ) ) => Ord  ( Term var ctx p )
+deriving stock instance ( Show var, Show ( XApp p ), Show ( XVar p ) ) => Show ( Term var ctx p )
+
+{-------------------------------------------------------------------------------
+  Functor-like instance
+-------------------------------------------------------------------------------}
+
+mapExprVar :: (var -> var') -> Expr var ctx p -> Expr var' ctx p
+mapExprVar fun = \case
+    Term  m        -> Term (mapTermVar fun m)
+    TyApp f args   -> TyApp f   (fmap (mapExprVar fun) args)
+    VaApp x f args -> VaApp x f (fmap (mapExprVar fun) args)
+
+mapTermVar :: (var -> var') -> Term var ctx p -> Term var' ctx p
+mapTermVar fun = \case
+  Literal l     -> Literal l
+  LocalParam p  -> LocalParam p
+  Var x nm args -> Var x (fun nm) (map (mapExprVar fun) args)

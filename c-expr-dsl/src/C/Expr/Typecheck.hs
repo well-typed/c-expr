@@ -62,7 +62,7 @@ tcMacros ::
   -> (CTypeSource -> Name -> var)            -- ^ inject type name
   -> (Name                -> var)            -- ^ inject value name
   -> (TagKind     -> Name -> Except err var) -- ^ inject tagged type name
-  -> [Macro]
+  -> [Macro Name]
   -> Map Name (MacroTcResult err var)
 tcMacros typedefs injectType injectValue injectTaggedType macros =
     let (_, _, tcRs) = Foldable.foldl' step initEnv macros
@@ -76,7 +76,7 @@ tcMacros typedefs injectType injectValue injectTaggedType macros =
 
     step ::
          (TypeEnv, Map Name CTypeSource, Map Name (MacroTcResult err var))
-      -> Macro
+      -> Macro Name
       -> (TypeEnv, Map Name CTypeSource, Map Name (MacroTcResult err var))
     step (env, typeSources, acc) (Macro _loc name params body) =
       let injectTypeWithSource :: Name -> var
@@ -180,7 +180,7 @@ tcMacroOne ::
   -> (TagKind -> Name -> m var)
   -> Name
   -> Vec ctx Name
-  -> Expr ctx Ps
+  -> Expr Name ctx Ps
   -> m (MacroTcResult err var)
 tcMacroOne tyEnv injectType injectValue injectTaggedType name params expr =
     case tcExpr tyEnv name params expr of

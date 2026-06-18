@@ -61,11 +61,11 @@ fromExpr ::
      forall ctx m var p. Applicative m
   => (Name -> var)
   -> (M.TagKind -> Name -> m var)
-  -> M.Expr ctx p
+  -> M.Expr Name ctx p
   -> m (Expr var)
 fromExpr injectType injectTaggedType = go
   where
-    go :: M.Expr ctx p -> m (Expr var)
+    go :: M.Expr Name ctx p -> m (Expr var)
     go = \case
       M.Term (M.Literal x) ->
         fromLit x
@@ -78,8 +78,8 @@ fromExpr injectType injectTaggedType = go
       M.TyApp fun args -> do
         let arg = myHead args
         case fun of
-          M.Pointer -> App Pointer <$> (go arg)
-          M.Const   -> App Const   <$> (go arg)
+          M.Pointer -> App Pointer <$> go arg
+          M.Const   -> App Const   <$> go arg
       M.VaApp _ fun _ ->
         panicPure $ show $ UnexpectedValueFunctionApplicationInType (show fun)
 
