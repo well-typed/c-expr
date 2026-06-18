@@ -143,7 +143,9 @@ parseClangType cxTy = do
 getExpansionTypeMapping :: Clang.ClangArgs -> [ CType ] -> IO ( Map CType CType )
 getExpansionTypeMapping clangArgs tys =
   clangVisitChildren clangArgs sourceProgram ( getCanonicalType Nothing ) $
-    traverse ( \ cxTy -> expectJust cxTy =<< parseClangType cxTy ) . Map.fromList
+    \ _severe ->
+        traverse ( \ cxTy -> expectJust cxTy =<< parseClangType cxTy )
+      . Map.fromList
 
   where
 
@@ -209,10 +211,22 @@ getExpansionTypeMapping clangArgs tys =
             , Text.unpack tyNm ]
         Just ty -> return ty
 
-queryClangForResultType :: forall n. Clang.ClangArgs -> Vec n CType -> ( Vec n String -> String ) -> IO ( Maybe CType )
+-- | Query @clang@ for the result type of an operator application.
+--
+-- Returns the extracted type (if any) together with the formatted text of any
+-- severe diagnostics @clang@ emitted. A severe diagnostic discards the whole
+-- translation unit, so the type is then 'Nothing'; returning the diagnostics
+-- lets the caller report /why/ the result is unavailable (e.g. a builtin header
+-- such as @stddef.h@ could not be found) instead of a bare @<n/a>@.
+queryClangForResultType ::
+     forall n. Clang.ClangArgs
+  -> Vec n CType
+  -> ( Vec n String -> String )
+  -> IO ( Maybe CType, [ Text ] )
 queryClangForResultType clangArgs tys op =
   clangVisitChildren clangArgs sourceProgram ( extractType ( False, False ) ) $
-    return . listToMaybe
+    \ severe results ->
+      return ( listToMaybe results, map Clang.diagnosticFormatted severe )
   where
     n :: Int
     n = length tys
@@ -303,25 +317,26 @@ clangWithTranslationUnit userClangArgs srcContents k =
 
 -- NB: This is implemented using a continuation so that all @libclang@ values
 -- are processed before the file content, translation unit, and index are freed.
-clangVisitChildren :: Clang.ClangArgs -> String -> Clang.Fold IO a -> ([a] -> IO b) -> IO b
-clangVisitChildren args srcContents f k = clangWithTranslationUnit args srcContents $ \unit -> do
-
-  diags  <- Clang.clang_getDiagnostics unit Nothing
-  let (errors, _warnings) = partition diagnosticIsSevere diags
-
-{-
-  unless (null errors) $
-    putStrLn $ unlines $ map (\ x -> show x ++ "\n") errors
-  unless (null _warnings) $
-    putStrLn $ unlines $ ("WARNINGS:":) (map (\ x -> show x ++ "\n") _warnings)
--}
-
-  if null errors
-  then do
-    rootCursor <- Clang.clang_getTranslationUnitCursor unit
-    k =<< Clang.clang_visitChildren rootCursor f
-  else
-    k []
+-- | The continuation receives the severe diagnostics (empty unless the
+-- translation unit failed to compile) and the folded results. When there are
+-- severe diagnostics the translation unit is discarded, so the results are
+-- empty and the diagnostics explain why.
+clangVisitChildren ::
+     Clang.ClangArgs
+  -> String
+  -> Clang.Fold IO a
+  -> ([Clang.Diagnostic] -> [a] -> IO b)
+  -> IO b
+clangVisitChildren args srcContents f k =
+    clangWithTranslationUnit args srcContents $ \unit -> do
+      diags <- Clang.clang_getDiagnostics unit Nothing
+      let (errors, _warnings) = partition diagnosticIsSevere diags
+      if null errors
+      then do
+        rootCursor <- Clang.clang_getTranslationUnitCursor unit
+        k errors =<< Clang.clang_visitChildren rootCursor f
+      else
+        k errors []
 
 diagnosticIsSevere :: Clang.Diagnostic -> Bool
 diagnosticIsSevere diag =

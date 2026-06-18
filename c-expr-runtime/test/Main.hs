@@ -9,23 +9,22 @@
 module Main where
 
 import Control.Arrow (first)
-import Data.Char (isSpace)
-import Data.List (dropWhileEnd)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes)
-import Data.Text qualified as Text (pack)
+import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Traversable (for)
 import Data.Type.Nat
 import Data.Vec.Lazy (Vec (..))
 import System.Exit
 import System.Info qualified as Info
-import System.Process (readProcessWithExitCode)
 
 import C.Type
 import C.Type.Internal.Universe
 
 import Clang.Args qualified as Clang
+import Clang.Discover qualified as Clang
 
 import C.Operators (BinaryOp (..), Op (..), UnaryOp (..), opResType, pprOp,
                     pprOpApp)
@@ -71,12 +70,12 @@ main = do
       if null bad
       then do
         putStrLn $ "   PASSED (" ++ show (length ok) ++ " tests)"
-        return Nothing
+        pure Nothing
       else do
         putStrLn $ unlines $
           ( "   FAILED:" )
           : map ( showFailure . first show ) bad
-        return $ Just bad
+        pure $ Just bad
   putStrLn "Binary operators"
   binaries <- binaryTests hostPlatform clangArgs canonTys
   badBinary <-
@@ -86,67 +85,63 @@ main = do
       if null bad
       then do
         putStrLn $ "   PASSED (" ++ show (length ok) ++ " tests)"
-        return Nothing
+        pure Nothing
       else do
         putStrLn $ unlines $
             "   FAILED:"
           : map ( showFailure . first show ) bad
-        return $ Just bad
+        pure $ Just bad
   if null badUnary && null badBinary
   then exitSuccess
   else exitFailure
 
 
--- | Ask the @clang@ on @PATH@ for its resource directory, returning it as
--- @-resource-dir@ arguments for @libclang@.
---
--- The resource directory holds the compiler builtin headers (@stddef.h@,
--- @stdint.h@, ...). When @libclang@ is loaded from a relocated toolchain — as
--- it is on CI, where the LLVM tarball is extracted into a temporary directory —
--- it cannot find these on its own. The first @#include@ then fails, which
--- (since a single severe diagnostic discards the whole translation unit) makes
--- every type query return @<n/a>@. Pointing @libclang@ at the resource
--- directory explicitly avoids this; it does /not/ affect the search for system
--- headers, which Clang still derives from the target.
---
--- The @clang@ on @PATH@ comes from the same toolchain as the loaded @libclang@,
--- so its resource directory is the right one. If the lookup fails we warn and
--- fall back to @libclang@'s own resolution.
 clangResourceDirArgs :: IO [ String ]
 clangResourceDirArgs = do
-  ( ec, out, _err ) <- readProcessWithExitCode "clang" [ "-print-resource-dir" ] ""
-  case ec of
-    ExitSuccess
-      | dir@( _ : _ ) <- dropWhileEnd isSpace ( dropWhile isSpace out )
-      -> return [ "-resource-dir", dir ]
+  let noTrace _ _ = pure ()
+  paths <- Clang.getPaths noTrace Clang.BuiltinIncDirClang
+  case Clang.pBuiltinIncDir paths of
+    Just dir -> do
+      putStrLn $ "Clang builtin include directory is: " ++ dir
+      pure [ "-isystem", dir ]
     _ -> do
-      putStrLn $
-        "WARNING: could not determine Clang's resource directory via "
-          ++ "`clang -print-resource-dir`; falling back to libclang's own "
-          ++ "resolution. Builtin headers (stddef.h, ...) may not be found."
-      return []
+      putStrLn $ unlines [
+          "WARNING: could not determine Clang's builtin include directory, falling back to libclang's own resolution."
+        , "Builtin headers (stddef.h, ...) may not be found."
+        ]
+      pure []
 
-showFailure :: ( String, ( Maybe CType, Maybe CType ) ) -> String
-showFailure ( input, ( mbOurs, mbClang ) ) =
-  unlines
-    [ "   " ++ input
-    , "     - computed type: " ++ showMaybeType mbOurs
-    , "     -  Clang's type: " ++ showMaybeType mbClang
-    ]
+showFailure :: ( String, ( Maybe CType, Maybe CType, [ Text ] ) ) -> String
+showFailure ( input, ( mbOurs, mbClang, diags ) ) =
+  unlines $
+       [ "   " ++ input
+       , "     - computed type: " ++ showMaybeType mbOurs
+       , "     -  Clang's type: " ++ showMaybeType mbClang
+       ]
+    ++ [ "     - Clang's diagnostics:"
+       | not ( null diags ) ]
+    ++ [ "         " ++ l
+       | d <- diags
+       , l <- lines ( Text.unpack d ) ]
   where
     showMaybeType Nothing     = "<n/a>"
     showMaybeType ( Just ty ) = show ty
 
 data TestResult a
   = TestOK !a
-  | TestFailed
-    { ours, clang's :: !a }
+  | TestFailed {
+        ours       :: !a
+      , clang's    :: !a
+      , clangDiags :: ![ Text ]
+      }
   deriving stock Show
 
-partitionTests :: [ ( x, TestResult a ) ] -> ( [ ( x, a ) ], [ ( x, ( a, a ) ) ] )
+partitionTests ::
+     [ ( x, TestResult a ) ]
+  -> ( [ ( x, a ) ], [ ( x, ( a, a, [ Text ] ) ) ] )
 partitionTests = foldMap $ \case
-  ( x, TestOK a ) -> ( [ ( x, a ) ], [] )
-  ( x, TestFailed b1 b2 ) -> ( [], [ ( x, ( b1, b2 ) ) ] )
+  ( x, TestOK a )            -> ( [ ( x, a ) ], []                        )
+  ( x, TestFailed b1 b2 ds ) -> ( []          , [ ( x, ( b1, b2, ds ) ) ] )
 
 eqTypeUpToExpansion :: Map CType CType -> Maybe CType -> Maybe CType -> Bool
 eqTypeUpToExpansion canonTys ourTy clangTy = go ourTy
@@ -164,12 +159,16 @@ unaryTests :: Platform -> Clang.ClangArgs -> Map CType CType -> IO [ ( UnaryOp, 
 unaryTests platform clangArgs canonTys =
   sequence
     [ ( op, ) <$> sequence
-         [ do let ours = fmap CType $ opResType platform ( UnaryOp op ) ( ty ::: VNil )
-              clang's <- queryClangForResultType clangArgs ( CType ty ::: VNil ) ( pprOpApp ( UnaryOp op ) )
-              return $ ( CType ty , ) $
+         [ do let ours = CType <$> opResType platform ( UnaryOp op ) ( ty ::: VNil )
+              ( clang's, clangDiags ) <-
+                queryClangForResultType
+                  clangArgs
+                  ( CType ty ::: VNil )
+                  ( pprOpApp ( UnaryOp op ) )
+              pure $ ( CType ty , ) $
                 if eqTypeUpToExpansion canonTys ours clang's
                 then TestOK ours
-                else TestFailed { ours, clang's }
+                else TestFailed { ours, clang's, clangDiags }
          | ( ty ::: VNil ) <- mkCTypes <$> enumerateTypeTuples @( S Z )
          ]
     | op <- [ ( minBound :: UnaryOp ) .. maxBound ] ]
@@ -180,12 +179,16 @@ binaryTests platform clangArgs canonTys =
   sequence
     [ ( op, ) <$>
       sequence
-        [ do let ours = fmap CType $ opResType platform ( BinaryOp op ) ( ty1 ::: ty2 ::: VNil )
-             clang's <- queryClangForResultType clangArgs ( CType ty1 ::: CType ty2 ::: VNil ) ( pprOpApp ( BinaryOp op ) )
-             return $ ( ( CType ty1, CType ty2 ), ) $
+        [ do let ours = CType <$> opResType platform ( BinaryOp op ) ( ty1 ::: ty2 ::: VNil )
+             ( clang's, clangDiags ) <-
+               queryClangForResultType
+                 clangArgs
+                 ( CType ty1 ::: CType ty2 ::: VNil )
+                 ( pprOpApp ( BinaryOp op ) )
+             pure $ ( ( CType ty1, CType ty2 ), ) $
                if eqTypeUpToExpansion canonTys ours clang's
                then TestOK ours
-               else TestFailed { ours, clang's }
+               else TestFailed { ours, clang's, clangDiags }
         | ( ty1 ::: ty2 ::: VNil ) <- mkCTypes <$> enumerateTypeTuples @( S ( S Z ) )
         ]
     | op <- [ ( minBound :: BinaryOp ) .. maxBound ] ]
