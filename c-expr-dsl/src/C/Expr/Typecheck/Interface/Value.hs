@@ -19,7 +19,7 @@ import Data.Vec.Lazy (Vec)
 import DeBruijn (Idx)
 
 import C.Expr.Syntax qualified as M
-import C.Expr.Syntax.Name
+import C.Expr.Syntax.Identifier
 import C.Expr.Util.Panic
 
 data Expr ctx var =
@@ -54,7 +54,7 @@ instance Exception ConversionError
 
 fromExpr ::
      forall ctx var p.
-     (Name -> var)
+     (Identifier -> var)
   -> M.Expr ctx p
   -> Expr ctx var
 fromExpr injectValue = go

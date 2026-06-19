@@ -13,9 +13,9 @@ import DeBruijn (Idx (..))
 import Text.Parsec hiding (parseTest, token)
 import Text.Parsec.Expr
 
+import C.Expr.Parse.Identifier
 import C.Expr.Parse.Infra
 import C.Expr.Parse.Literal
-import C.Expr.Parse.Name
 import C.Expr.Syntax
 
 import Clang.CStandard
@@ -44,7 +44,7 @@ import Clang.LowLevel.Core
 -- value expressions.
 parseMacro :: ClangCStandard -> Parser Macro
 parseMacro cStd = do
-    (macroLocRange, macroName) <- parseLocName
+    (macroLocRange, macroName) <- parseLocIdentifier
     let
         macroLoc :: MultiLoc
         macroLoc = macroLocRange.rangeStart
@@ -69,13 +69,13 @@ parseMacro cStd = do
     -- is essential: if @'parseMacroType'@ succeeds on a prefix (e.g. the bare
     -- identifier in @size_t + 1@) but leaves tokens unconsumed, the whole
     -- attempt is abandoned and we fall back to the expression parser.
-    bodyExpr :: Vec ctx Name -> Parser (Expr ctx Ps)
+    bodyExpr :: Vec ctx Identifier -> Parser (Expr ctx Ps)
     bodyExpr macroParams = try (parseMacroType cStd macroParams <* eof) <|> exprTuple cStd macroParams
 
-formalParams :: Parser [Name]
-formalParams = parens $ parseName `sepBy` comma
+formalParams :: Parser [Identifier]
+formalParams = parens $ parseIdentifier `sepBy` comma
 
-lookupParam :: Name -> Vec ctx Name -> Maybe (Idx ctx)
+lookupParam :: Identifier -> Vec ctx Identifier -> Maybe (Idx ctx)
 lookupParam _ VNil    = Nothing
 lookupParam n (m ::: vec)
   | n == m    = Just IZ
@@ -134,7 +134,7 @@ noWhitespace prevRange = lookAhead $ do
 --   the typechecker decides whether it names a type or a value.
 -- * Each @const@ qualifier wraps the expression in @'TyApp' 'Const'@.
 -- * Each @*@ pointer layer wraps the expression in @'TyApp' 'Pointer'@.
-parseMacroType :: ClangCStandard -> Vec ctx Name -> Parser (Expr ctx Ps)
+parseMacroType :: ClangCStandard -> Vec ctx Identifier -> Parser (Expr ctx Ps)
 parseMacroType cStd macroParams = do
     constBefore <- option False (True <$ keyword "const")
     base        <- typeBase cStd macroParams
@@ -160,7 +160,7 @@ parseMacroType cStd macroParams = do
 -- * @'Term' ('LocalParam' …)@ for a bare identifier that is a local macro parameter.
 -- * @'Term' ('Var' …)@ for any other bare identifier; the typechecker decides
 --   whether it names a type or a value.
-typeBase :: forall ctx. ClangCStandard -> Vec ctx Name -> Parser (Expr ctx Ps)
+typeBase :: forall ctx. ClangCStandard -> Vec ctx Identifier -> Parser (Expr ctx Ps)
 typeBase cStd macroParams =
     choice [
         -- Type literal.
@@ -175,10 +175,10 @@ typeBase cStd macroParams =
         -- the two by restricting @parseMacroType@ to keyword\/tagged bases only
         -- does not help (both paths produce the same @'Var'@ node) while
         -- adding backtracking overhead.
-      , Term . mkVar <$> parseName
+      , Term . mkVar <$> parseIdentifier
       ]
   where
-    mkVar :: Name -> Term ctx Ps
+    mkVar :: Identifier -> Term ctx Ps
     mkVar n = case lookupParam n macroParams of
       Just i  -> LocalParam i
       Nothing -> Var NoXVar n []
@@ -208,14 +208,14 @@ typeLiteral cStd = do
 --   union  tag
 --   enum   tag
 -- @
-taggedTypeLit :: Parser (TagKind, Name)
+taggedTypeLit :: Parser (TagKind, Identifier)
 taggedTypeLit = do
     tag <- choice [
         TagStruct <$ keyword "struct"
       , TagUnion  <$ keyword "union"
       , TagEnum   <$ keyword "enum"
       ]
-    name <- parseName
+    name <- parseIdentifier
     return (tag, name)
 
 data TypeKeyword =
@@ -322,7 +322,7 @@ keyword expected = token $ \t ->
   Simple expressions
 -------------------------------------------------------------------------------}
 
-term :: forall ctx. ClangCStandard -> Vec ctx Name -> Parser (Term ctx Ps)
+term :: forall ctx. ClangCStandard -> Vec ctx Identifier -> Parser (Term ctx Ps)
 term cStd macroParams =
     buildExpressionParser ops trm <?> "simple expression"
   where
@@ -334,7 +334,7 @@ term cStd macroParams =
 
     localParamOrVar :: Parser (Term ctx Ps)
     localParamOrVar = do
-      varName <- parseName
+      varName <- parseIdentifier
       case lookupParam varName macroParams of
         Just i  -> pure $ LocalParam i
         Nothing -> Var NoXVar varName <$> option [] (actualArgs cStd macroParams)
@@ -384,7 +384,7 @@ literalString = do
   val <- parseTokenOfKind CXToken_Literal parseLiteralString
   return $ StringLiteral val
 
-actualArgs :: ClangCStandard -> Vec ctx Name -> Parser [Expr ctx Ps]
+actualArgs :: ClangCStandard -> Vec ctx Identifier -> Parser [Expr ctx Ps]
 actualArgs cStd macroParams = parens $ expr cStd macroParams `sepBy` comma
 
 {-------------------------------------------------------------------------------
@@ -395,7 +395,7 @@ actualArgs cStd macroParams = parens $ expr cStd macroParams `sepBy` comma
   follow the same structure.
 -------------------------------------------------------------------------------}
 
-exprTuple :: ClangCStandard -> Vec ctx Name -> Parser (Expr ctx Ps)
+exprTuple :: ClangCStandard -> Vec ctx Identifier -> Parser (Expr ctx Ps)
 exprTuple cStd macroParams = try tuple <|> expr cStd macroParams
   where
     tuple = do
@@ -408,7 +408,7 @@ exprTuple cStd macroParams = try tuple <|> expr cStd macroParams
         Vec.reifyList es $ \es' ->
            VaApp NoXApp MTuple ( e1 ::: e2 ::: es' )
 
-expr :: forall ctx. ClangCStandard -> Vec ctx Name -> Parser (Expr ctx Ps)
+expr :: forall ctx. ClangCStandard -> Vec ctx Identifier -> Parser (Expr ctx Ps)
 expr cStd macroParams = buildExpressionParser ops trm <?> "expression"
   where
 

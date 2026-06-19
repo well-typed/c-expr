@@ -1,5 +1,5 @@
-module C.Expr.Syntax.Name (
-    Name(..)
+module C.Expr.Syntax.Identifier (
+    Identifier(..)
   ) where
 
 import Data.String
@@ -11,8 +11,8 @@ import GHC.Generics (Generic)
 -------------------------------------------------------------------------------}
 
 -- | Macro arguments
-newtype Name = Name {
-      getName :: Text
+newtype Identifier = Identifier {
+      getIdentifier :: Text
     }
   deriving newtype (Show, Eq, Ord, IsString, Semigroup)
   deriving stock (Generic)

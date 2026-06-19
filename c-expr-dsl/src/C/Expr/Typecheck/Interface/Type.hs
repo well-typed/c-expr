@@ -18,7 +18,7 @@ import Data.Vec.Lazy (Vec (..))
 import DeBruijn (idxToInt)
 
 import C.Expr.Syntax qualified as M
-import C.Expr.Syntax.Name
+import C.Expr.Syntax.Identifier
 import C.Expr.Util.Panic
 
 data Expr var =
@@ -46,7 +46,7 @@ data ConversionError =
     -- | Unexpected value literal (e.g., the integer @42@)
     UnexpectedValueLiteralInType String
     -- | Unexpected named function call in type
-  | UnexpectedFunctionCallInType Name
+  | UnexpectedFunctionCallInType Identifier
     -- | Unexpected local parameter in type
   | UnexpectedLocalParameterInType Int
     -- | A unary type function received multiple arguments
@@ -59,8 +59,8 @@ instance Exception ConversionError
 
 fromExpr ::
      forall ctx m var p. Applicative m
-  => (Name -> var)
-  -> (M.TagKind -> Name -> m var)
+  => (Identifier -> var)
+  -> (M.TagKind -> Identifier -> m var)
   -> M.Expr ctx p
   -> m (Expr var)
 fromExpr injectType injectTaggedType = go

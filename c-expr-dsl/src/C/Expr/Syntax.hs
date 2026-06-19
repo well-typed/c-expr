@@ -17,7 +17,7 @@ module C.Expr.Syntax (
   , IntSize(..)
   , FloatSize(..)
     -- ** Expressions
-  , Name(..)
+  , Identifier(..)
   , Expr(..)
   , TyQual(..)
   , VaFun(..)
@@ -44,8 +44,8 @@ import Data.Vec.Lazy (Vec, withDict)
 import DeBruijn (Ctx)
 
 import C.Expr.Syntax.Expr
+import C.Expr.Syntax.Identifier
 import C.Expr.Syntax.Literal
-import C.Expr.Syntax.Name
 import C.Expr.Syntax.TTG
 import C.Expr.Syntax.TTG.Parse
 import C.Expr.Syntax.Type
@@ -55,8 +55,8 @@ import Clang.HighLevel.Types
 type Macro :: Hs.Type
 data Macro = forall (ctx :: Ctx). Macro {
       macroLoc    :: MultiLoc
-    , macroName   :: Name
-    , macroParams :: Vec ctx Name
+    , macroName   :: Identifier
+    , macroParams :: Vec ctx Identifier
     , macroExpr   :: Expr ctx Ps
     }
 

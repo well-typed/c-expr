@@ -466,7 +466,7 @@ instance Show ( ClassTyCon n ) where
 
 -- | The typing environment: every in-scope name (@typedef@ or previously
 -- typechecked macro) mapped to its quantified type.
-type TypeEnv  = Map Name ( Quant ( FunValue, Type Ty ) )
+type TypeEnv  = Map Identifier ( Quant ( FunValue, Type Ty ) )
 -- | De Bruijn indexed environment of parameters /local to the macro
 -- definition/.
 type ParamEnv = IntMap   ( Type Ty )
@@ -484,12 +484,12 @@ type ParamEnv = IntMap   ( Type Ty )
 -- TODO <https://github.com/well-typed/c-expr/issues/7>
 --
 -- Should simplify significantly when we use @'Maybe' 'FunValue'@.
-buildTypedefEnv :: Set Name -> TypeEnv
+buildTypedefEnv :: Set Identifier -> TypeEnv
 buildTypedefEnv =
     Map.fromSet $ \nm ->
       Quant @Z $ \VNil ->
         QuantTyBody []
-          ( FunValue @Z (getName nm) (\VNil -> NoValue)
+          ( FunValue @Z (getIdentifier nm) (\VNil -> NoValue)
           , MacroTypeTy )
 
 {-------------------------------------------------------------------------------
@@ -592,9 +592,9 @@ pprCtOrigin = \case
 -- | Why did we create a new metavariable?
 data MetaOrigin
   = ExpectedFunTyResTy !FunName
-  | ExpectedVarTy !Name
+  | ExpectedVarTy !Identifier
   | Inst { instOrigin :: !InstOrigin, instPos :: !Int }
-  | FunParam !Name !( Name, Natural )
+  | FunParam !Identifier !( Identifier, Natural )
   | IntLitMeta !IntegerLiteral
   | FloatLitMeta !FloatingLiteral
 
@@ -609,12 +609,12 @@ pprMetaOrigin :: MetaOrigin -> Text
 pprMetaOrigin = \case
   ExpectedFunTyResTy funNm ->
     "the result type of '" <> Text.pack ( show funNm ) <> "'"
-  ExpectedVarTy ( Name varNm ) ->
+  ExpectedVarTy ( Identifier varNm ) ->
     "the type of the identifier '" <> varNm <> "'"
   Inst funNm i ->
     "the " <> speakNth i <> " type argument in the instantiation of '" <> Text.pack ( show funNm ) <> "'"
-  FunParam ( Name funNm ) ( param, i ) ->
-    "the type of the " <> speakNth (fromIntegral i) <> " parameter of '" <> funNm <> "' with name '" <> getName param <> "'"
+  FunParam ( Identifier funNm ) ( param, i ) ->
+    "the type of the " <> speakNth (fromIntegral i) <> " parameter of '" <> funNm <> "' with name '" <> getIdentifier param <> "'"
   IntLitMeta i ->
     "the type of the integer literal '" <> Text.pack ( show i ) <> "'"
   FloatLitMeta f ->

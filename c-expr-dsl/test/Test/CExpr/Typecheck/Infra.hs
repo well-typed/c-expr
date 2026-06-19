@@ -37,7 +37,7 @@ import C.Expr.Util.Panic
 
 import Test.CExpr.Util
 
-type MacDef = (Name, Expr Z Ps)
+type MacDef = (Identifier, Expr Z Ps)
 
 -- | Run 'tcMacros' on a single macro
 --
@@ -45,10 +45,10 @@ type MacDef = (Name, Expr Z Ps)
 -- typedef context.
 classifyOne ::
      forall ctx.
-     Name
-  -> Vec ctx Name
+     Identifier
+  -> Vec ctx Identifier
   -> Expr ctx Ps
-  -> MacroTcResult Void Name
+  -> MacroTcResult Void Identifier
 classifyOne name params body =
     case Map.toList (runTcMacros [Macro fakeLoc name params body]) of
       ((_, x):_) -> x
@@ -56,7 +56,7 @@ classifyOne name params body =
 
 -- | Typecheck a sequence of nullary macros in order, threading each successful
 -- result into the typing environment for later macros to reference.
-runTcSeq :: [MacDef] -> Map Name (MacroTcResult Void Name)
+runTcSeq :: [MacDef] -> Map Identifier (MacroTcResult Void Identifier)
 runTcSeq defs =
     runTcMacros [Macro fakeLoc nm VNil body | (nm, body) <- defs]
 
@@ -66,15 +66,15 @@ runTcSeq defs =
 --
 -- Tagged-type injection never fails here (uses 'Void' as the inject error
 -- type), so 'MacroTcInjectError' results are not produced.
-runTcMacros :: [Macro] -> Map Name (MacroTcResult Void Name)
+runTcMacros :: [Macro] -> Map Identifier (MacroTcResult Void Identifier)
 runTcMacros macros =
     tcMacros Set.empty (const id) id injectTaggedName macros
   where
-    injectTaggedName :: Applicative m => TagKind -> Name -> m Name
-    injectTaggedName tag nm = pure $ tagToName tag <> " " <> nm
+    injectTaggedName :: Applicative m => TagKind -> Identifier -> m Identifier
+    injectTaggedName tag nm = pure $ tagToPrefix tag <> " " <> nm
 
-    tagToName :: TagKind -> Name
-    tagToName = \case
+    tagToPrefix :: TagKind -> Identifier
+    tagToPrefix = \case
       TagStruct -> "struct"
       TagUnion  -> "union"
       TagEnum   -> "enum"
@@ -122,5 +122,5 @@ shiftLeft a b = VaApp NoXApp MShiftLeft (a ::: b ::: VNil)
 mlocal :: Idx ctx -> Expr ctx Ps
 mlocal i = Term $ LocalParam i
 
-mvar :: Name -> Expr ctx Ps
+mvar :: Identifier -> Expr ctx Ps
 mvar n = Term $ Var NoXVar n []
