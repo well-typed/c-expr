@@ -271,6 +271,7 @@ typFunName = \case
 data TcError
   = UnificationError !UnificationError
   | UnboundVariable  !Identifier
+  | TaggedNameWithArguments Identifier
   deriving stock Show
 
 data UnificationError
@@ -283,6 +284,8 @@ pprTcError = \case
     pprUnificationError err
   UnboundVariable ( Identifier nm ) ->
     "Unbound variable: '" <> nm <> "'"
+  TaggedNameWithArguments name ->
+    "Tagged name with arguments: " <> getIdentifier name
 
 pprUnificationError :: UnificationError -> Text
 pprUnificationError = \case
@@ -419,7 +422,7 @@ liftTcPureM = lift . lift . lift
 
 newUnique :: Monoid w => WriterT w ( StateT s TcUniqueM ) Unique
 newUnique = lift $ do
-  u <- lift $ State.get
+  u <- lift State.get
   let !u' = succ u
   lift $ State.put u'
   return u'
@@ -788,14 +791,18 @@ inferTerm = \case
   LocalParam i ->
     do resTy <- liftTcPureM $ lookupLocalParam i
        return ( resTy, LocalParam i )
-  Var NoXVar fun argsList -> Vec.reifyList argsList $ \ args ->
+  Var NoXVar (NameOrdinary fun) argsList -> Vec.reifyList argsList $ \ args ->
     do ( funVal, ( args', resTy ) ) <- inferVaApp ( FunVar fun ) args
-       return ( resTy, Var ( XVarTc funVal ) fun ( Vec.toList args' ) )
+       return ( resTy, Var ( XVarTc funVal ) (NameOrdinary fun) ( Vec.toList args' ) )
+  Var NoXVar (NameTagged name tag) argsList -> do
+    case argsList of
+      [] -> pure ()
+      _  -> addErrTcGenM $ TaggedNameWithArguments name
+    pure (MacroTypeTy, Var (XVarTc NoFunValue) (NameTagged name tag) [])
 
 inferLit :: Literal -> Type Ty
 inferLit = \case
   TypeLit{}        -> MacroTypeTy
-  TypeTagged{}     -> MacroTypeTy
   ValueLit vaLit -> case vaLit of
     ValueInt ( IntegerLiteral { integerLiteralType = intyTy } ) ->
       IntLike $ PrimIntInfoTy $ CIntegralType $ Runtime.IntLike intyTy
@@ -1818,6 +1825,7 @@ evaluateExpr :: IntMap Value -> TypeEnv -> Expr ctx Tc -> Value
 evaluateExpr argVals tyEnv = \case
   Term tm  -> evaluateTerm argVals tyEnv tm
   TyApp{}  -> NoValue
+  VaApp ( XAppTc ( NoFunValue ) ) _funName _args -> NoValue
   VaApp @_ @_ @m ( XAppTc ( FunValue @n _ fn ) ) _funName args ->
     -- We have stored the function that performs evaluation in the XAppTc
     -- field of the AST. For example, for addition, we have wrapped
@@ -1837,6 +1845,7 @@ evaluateTerm argVals tyEnv = \case
   Literal x -> evaluateLit x
   -- Local macro parameter, e.g. @X@ in @#define AddOne(X) X+1@.
   LocalParam i -> fromMaybe NoValue $ IntMap.lookup (idxToInt i) argVals
+  Var ( XVarTc ( NoFunValue ) ) _nm _args -> NoValue
   Var ( XVarTc ( FunValue @n _ fn ) ) nm args
     -> Vec.reifyList args $ \ ( argsVec :: Vec m ( Expr ctx Tc ) ) ->
         case Nat.eqNat @n @m of
@@ -1882,7 +1891,6 @@ evaluateLit = \case
     ValueString {} -> NoValue
   -- We do not evaluate type functions.
   TypeLit    {} -> NoValue
-  TypeTagged {} -> NoValue
 
 naturalMaybe :: ValSType ty -> ty -> Maybe Natural
 naturalMaybe ( ValSType ty ) i =

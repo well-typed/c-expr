@@ -64,6 +64,7 @@ library
     C.Expr.Syntax.Expr
     C.Expr.Syntax.Identifier
     C.Expr.Syntax.Literal
+    C.Expr.Syntax.Name
     C.Expr.Syntax.TTG
     C.Expr.Syntax.TTG.Parse
     C.Expr.Syntax.TTG.Typecheck

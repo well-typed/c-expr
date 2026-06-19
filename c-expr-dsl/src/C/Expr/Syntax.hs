@@ -12,12 +12,13 @@ module C.Expr.Syntax (
     Macro(..)
     -- ** Type syntax
   , TypeLit(..)
-  , TagKind(..)
   , Sign(..)
   , IntSize(..)
   , FloatSize(..)
     -- ** Expressions
   , Identifier(..)
+  , TagKind(..)
+  , Name(..)
   , Expr(..)
   , TyQual(..)
   , VaFun(..)
@@ -46,6 +47,7 @@ import DeBruijn (Ctx)
 import C.Expr.Syntax.Expr
 import C.Expr.Syntax.Identifier
 import C.Expr.Syntax.Literal
+import C.Expr.Syntax.Name
 import C.Expr.Syntax.TTG
 import C.Expr.Syntax.TTG.Parse
 import C.Expr.Syntax.Type

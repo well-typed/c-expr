@@ -7,7 +7,6 @@
 -- and 'Pointer'.
 module C.Expr.Syntax.Type (
     TypeLit(..)
-  , TagKind(..)
   , Sign(..)
   , IntSize(..)
   , FloatSize(..)
@@ -56,10 +55,6 @@ data TypeLit =
 
     -- | @_Bool@ or @bool@ (C23)
   | TypeBool
-  deriving stock (Eq, Ord, Show, Generic)
-
--- | Tag kind for elaborated types
-data TagKind = TagStruct | TagUnion | TagEnum
   deriving stock (Eq, Ord, Show, Generic)
 
 data Sign = Signed | Unsigned

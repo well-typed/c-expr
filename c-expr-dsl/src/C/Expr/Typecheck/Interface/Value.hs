@@ -20,6 +20,7 @@ import DeBruijn (Idx)
 
 import C.Expr.Syntax qualified as M
 import C.Expr.Syntax.Identifier
+import C.Expr.Syntax.Name
 import C.Expr.Util.Panic
 
 data Expr ctx var =
@@ -65,8 +66,12 @@ fromExpr injectValue = go
         fromLit x
       M.Term (M.LocalParam i) ->
         LocalParam i
-      M.Term (M.Var _ nm args) ->
-        Var (injectValue nm) (map go args)
+      M.Term (M.Var _ nm args) -> case nm of
+        NameOrdinary nm' ->
+          Var (injectValue nm') (map go args)
+        NameTagged   nm' tag ->
+          panicPure $ show $ UnexpectedTypeInValue (show (nm', tag))
+
       M.TyApp fun _ ->
         panicPure $ show $ UnexpectedTypeFunctionApplicationInValue (show fun)
       M.VaApp _ fun args ->
@@ -76,8 +81,6 @@ fromExpr injectValue = go
     fromLit = \case
       M.TypeLit x ->
         panicPure $ show $ UnexpectedTypeInValue (show x)
-      M.TypeTagged tag nm ->
-        panicPure $ show $ UnexpectedTypeInValue (show (tag, nm))
       M.ValueLit x -> Literal $ case x of
         M.ValueInt y    -> M.ValueInt y
         M.ValueFloat y  -> M.ValueFloat y

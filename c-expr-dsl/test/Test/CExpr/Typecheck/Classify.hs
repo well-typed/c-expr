@@ -37,9 +37,9 @@ tests_keywordTypes = testGroup "keyword type bodies" [
     , testCase "double"     $ assertTypeMacro $ classifyOne "M" VNil (tyLit (TypeFloat SizeDouble))
     , testCase "_Bool"      $ assertTypeMacro $ classifyOne "M" VNil (tyLit TypeBool)
     , testCase "char"       $ assertTypeMacro $ classifyOne "M" VNil (tyLit (TypeChar Nothing))
-    , testCase "struct Foo" $ assertTypeMacro $ classifyOne "M" VNil (Term (Literal (TypeTagged TagStruct "Foo")))
-    , testCase "union Bar"  $ assertTypeMacro $ classifyOne "M" VNil (Term (Literal (TypeTagged TagUnion  "Bar")))
-    , testCase "enum Baz"   $ assertTypeMacro $ classifyOne "M" VNil (Term (Literal (TypeTagged TagEnum   "Baz")))
+    , testCase "struct Foo" $ assertTypeMacro $ classifyOne "M" VNil (mtagged "Foo" TagStruct)
+    , testCase "union Bar"  $ assertTypeMacro $ classifyOne "M" VNil (mtagged "Bar" TagUnion)
+    , testCase "enum Baz"   $ assertTypeMacro $ classifyOne "M" VNil (mtagged "Baz" TagEnum)
     ]
 
 {-------------------------------------------------------------------------------
@@ -53,7 +53,7 @@ tests_typeApp = testGroup "type application bodies" [
     , testCase "const int *"  $ assertTypeMacro $ classifyOne "M" VNil (ptrOf (constOf (tyLit intTy)))
     , testCase "int * const"  $ assertTypeMacro $ classifyOne "M" VNil (constOf (ptrOf (tyLit intTy)))
     , testCase "void *"       $ assertTypeMacro $ classifyOne "M" VNil (ptrOf (tyLit TypeVoid))
-    , testCase "struct Foo *" $ assertTypeMacro $ classifyOne "M" VNil (ptrOf (Term (Literal (TypeTagged TagStruct "Foo"))))
+    , testCase "struct Foo *" $ assertTypeMacro $ classifyOne "M" VNil (ptrOf (mtagged "Foo" TagStruct))
     ]
 
 {-------------------------------------------------------------------------------

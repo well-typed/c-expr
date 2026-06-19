@@ -166,7 +166,7 @@ typeBase cStd macroParams =
         -- Type literal.
         Term . Literal . TypeLit <$> typeLiteral cStd
         -- Tagged type (e.g., @struct Foo@)
-      , Term . Literal . uncurry TypeTagged <$> taggedTypeLit
+      , Term . mkTagged <$> taggedTypeLit
         -- The bare identifier (typedef name, type macro, or expression
         -- variable) is needed to parse pointer-qualified typedef references
         -- such as @size_t *@: without it, @parseMacroType@ would reject the
@@ -178,10 +178,13 @@ typeBase cStd macroParams =
       , Term . mkVar <$> parseIdentifier
       ]
   where
+    mkTagged :: (TagKind, Identifier) -> Term ctx Ps
+    mkTagged (tag, ident) = Var NoXVar (NameTagged ident tag) []
+
     mkVar :: Identifier -> Term ctx Ps
     mkVar n = case lookupParam n macroParams of
       Just i  -> LocalParam i
-      Nothing -> Var NoXVar n []
+      Nothing -> Var NoXVar (NameOrdinary n) []
 
 -- | Parse a sequence of type-literal keywords and combine them
 --
@@ -336,8 +339,11 @@ term cStd macroParams =
     localParamOrVar = do
       varName <- parseIdentifier
       case lookupParam varName macroParams of
-        Just i  -> pure $ LocalParam i
-        Nothing -> Var NoXVar varName <$> option [] (actualArgs cStd macroParams)
+        Just i ->
+          pure $ LocalParam i
+        Nothing ->
+          Var NoXVar (NameOrdinary varName) <$>
+            option [] (actualArgs cStd macroParams)
 
     lit :: Parser Literal
     lit = ValueLit <$> choice [

@@ -28,6 +28,7 @@ import Clang.CStandard
 import Clang.HighLevel.Types
 
 import Test.CExpr.Parse.Infra
+import Test.CExpr.Typecheck.Infra (mtagged, mvar)
 
 {-------------------------------------------------------------------------------
   Top-level
@@ -121,11 +122,11 @@ tests_typeBody cStd = [
     , testCase "struct Foo" $
         -- #define FOO struct Foo
         getObjExpr (checkMacro cStd [macroNameTok, kw "struct", ident "Foo"])
-          @?= Just (Term $ Literal (TypeTagged TagStruct "Foo"))
+          @?= Just (mtagged "Foo" TagStruct)
     , testCase "size_t" $
         -- #define FOO size_t (bare identifier; typechecker decides it's a type)
         getObjExpr (checkMacro cStd [macroNameTok, ident "size_t"])
-          @?= Just (Term (Var NoXVar "size_t" []))
+          @?= Just (mvar "size_t")
     , testCase "_Bool" $
         -- #define FOO _Bool
         getObjExpr (checkMacro cStd [macroNameTok, kw "_Bool"])
@@ -133,7 +134,7 @@ tests_typeBody cStd = [
     , testCase "_Bool" $
         -- #define FOO size_t const * const
         getObjExpr (checkMacro cStd [macroNameTok, ident "size_t", kw "const", punc "*", kw "const" ])
-          @?= Just (TyApp Const (TyApp Pointer (TyApp Const (Term (Var NoXVar "size_t" []) ::: VNil) ::: VNil) ::: VNil))
+          @?= Just (TyApp Const (TyApp Pointer (TyApp Const (mvar "size_t" ::: VNil) ::: VNil) ::: VNil))
     ]
 
 {-------------------------------------------------------------------------------
@@ -164,7 +165,7 @@ tests_funcLikeTypeBody cStd = [
             [ macroNameTok, punc "(", ident "T", punc ")"
             , ident "size_t", punc "*"
             ])
-          @?= Just (TyApp Pointer (Term (Var NoXVar "size_t" []) ::: VNil))
+          @?= Just (TyApp Pointer (mvar "size_t" ::: VNil))
     ]
 
 {-------------------------------------------------------------------------------

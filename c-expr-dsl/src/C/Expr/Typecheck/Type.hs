@@ -552,10 +552,15 @@ witnessValSType ( ValSType ty ) f =
 --   void foo(int arr[M(N) + N]);
 -- @
 data FunValue where
-  FunValue :: SNatI n => FunName -> ( Vec n Value -> Value ) -> FunValue
+  NoFunValue :: FunValue
+  FunValue   :: SNatI n => FunName -> ( Vec n Value -> Value ) -> FunValue
 instance Eq FunValue where
+  NoFunValue    == NoFunValue    = True
   FunValue f1 _ == FunValue f2 _ = f1 == f2
+  _             == _             = False
+
 instance Show FunValue where
+  show   NoFunValue      = "NoFunValue"
   show ( FunValue nm _ ) = Text.unpack nm
 
 {-------------------------------------------------------------------------------

@@ -19,6 +19,7 @@ import DeBruijn (idxToInt)
 
 import C.Expr.Syntax qualified as M
 import C.Expr.Syntax.Identifier
+import C.Expr.Syntax.Name
 import C.Expr.Util.Panic
 
 data Expr var =
@@ -46,7 +47,7 @@ data ConversionError =
     -- | Unexpected value literal (e.g., the integer @42@)
     UnexpectedValueLiteralInType String
     -- | Unexpected named function call in type
-  | UnexpectedFunctionCallInType Identifier
+  | UnexpectedFunctionCallInType Name
     -- | Unexpected local parameter in type
   | UnexpectedLocalParameterInType Int
     -- | A unary type function received multiple arguments
@@ -71,8 +72,9 @@ fromExpr injectType injectTaggedType = go
         fromLit x
       M.Term (M.LocalParam i) ->
         panicPure $ show $ UnexpectedLocalParameterInType (idxToInt i)
-      M.Term (M.Var _ nm []) ->
-        pure $ Var (injectType nm)
+      M.Term (M.Var _ nm []) -> case nm of
+        NameOrdinary nm'     -> pure $ Var (injectType nm')
+        NameTagged   nm' tag -> Var <$> injectTaggedType tag nm'
       M.Term (M.Var _ nm _ ) ->
         panicPure $ show $ UnexpectedFunctionCallInType nm
       M.TyApp fun args -> do
@@ -86,7 +88,6 @@ fromExpr injectType injectTaggedType = go
     fromLit :: M.Literal -> m (Expr var)
     fromLit = \case
       M.TypeLit x         -> pure $ TypeLit x
-      M.TypeTagged tag nm -> Var <$> injectTaggedType tag nm
       M.ValueLit x        -> panicPure $ show $ UnexpectedValueLiteralInType (show x)
 
     myHead :: Vec ('S n) a -> a

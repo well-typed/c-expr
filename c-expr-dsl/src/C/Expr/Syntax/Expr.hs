@@ -26,8 +26,8 @@ import Data.Vec.Lazy qualified as Vec
 import DeBruijn (Ctx, Idx)
 import GHC.Generics (Generic)
 
-import C.Expr.Syntax.Identifier
 import C.Expr.Syntax.Literal
+import C.Expr.Syntax.Name
 import C.Expr.Syntax.TTG
 import C.Expr.Syntax.Type
 import C.Expr.Util.TestEquality
@@ -211,12 +211,6 @@ data Literal =
     TypeLit  TypeLit
 
   | ValueLit ValueLit
-
-    -- NB: We do not accept untagged identifiers here, since they may correspond
-    -- to a value expression, not a type expression.
-
-    -- | An elaborated type literal: @struct tag@, @union tag@, @enum tag@
-  | TypeTagged !TagKind !Identifier
   deriving stock (Eq, Ord, Show)
 
 type Term :: Ctx -> Pass -> Type
@@ -235,7 +229,7 @@ data Term ctx p =
   | LocalParam (Idx ctx)
 
     -- | Free variable: another macro or typedef
-  | Var ( XVar p ) Identifier [Expr ctx p]
+  | Var ( XVar p ) Name [Expr ctx p]
   deriving stock Generic
 deriving stock instance ( Eq   ( XApp p ), Eq   ( XVar p ) ) => Eq   ( Term ctx p )
 deriving stock instance ( Ord  ( XApp p ), Ord  ( XVar p ) ) => Ord  ( Term ctx p )

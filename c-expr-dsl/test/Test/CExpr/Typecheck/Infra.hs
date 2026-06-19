@@ -18,6 +18,7 @@ module Test.CExpr.Typecheck.Infra (
   , shiftLeft
   , mlocal
   , mvar
+  , mtagged
   ) where
 
 import Data.Map (Map)
@@ -123,4 +124,7 @@ mlocal :: Idx ctx -> Expr ctx Ps
 mlocal i = Term $ LocalParam i
 
 mvar :: Identifier -> Expr ctx Ps
-mvar n = Term $ Var NoXVar n []
+mvar n = Term $ Var NoXVar (NameOrdinary n) []
+
+mtagged :: Identifier -> TagKind -> Expr ctx Ps
+mtagged n t = Term $ Var NoXVar (NameTagged n t) []
