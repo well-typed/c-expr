@@ -122,7 +122,7 @@ tests_errors :: TestTree
 tests_errors = testGroup "error cases" [
       testCase "unbound variable" $
         -- A bare identifier not in TypeEnv and not a macro argument is an
-        -- unbound variable.  'tcMacros' reports it as 'MacroTcCheckError'.
+        -- unbound variable.  'tcMacros' reports it as 'MacroTcError'.
         assertCheckError $ classifyOne "M" VNil (mvar "unknown")
 
     , testCase "value macro referencing unknown name" $
@@ -141,7 +141,7 @@ tests_errors = testGroup "error cases" [
         assertCheckError $ classifyOne "M" VNil (constOf (tyLit TypeVoid))
     ]
   where
-    assertCheckError :: (Show e, Show a) => MacroTcResult e a -> Assertion
+    assertCheckError :: (Show a) => MacroTcResult a -> Assertion
     assertCheckError = \case
       MacroTcError _ ->
         pure ()

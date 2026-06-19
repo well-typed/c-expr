@@ -1,4 +1,4 @@
--- | Names
+-- | Parsing C identifiers
 module C.Expr.Parse.Identifier (
     parseIdentifier
   , parseLocIdentifier
@@ -19,7 +19,7 @@ import Clang.LowLevel.Core
 
 -- | Parse an identifier
 --
--- Does not accept C keywords. Use 'parseLocName' when the token may be a
+-- Does not accept C keywords. Use 'parseLocIdentifier' when the token may be a
 -- keyword (e.g. for macro names, where @#define bool int@ is valid C).
 parseIdentifier :: Parser Identifier
 parseIdentifier = token $ \t -> do

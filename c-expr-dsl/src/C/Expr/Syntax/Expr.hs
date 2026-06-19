@@ -12,8 +12,12 @@ module C.Expr.Syntax.Expr (
   , ValueLit(..)
   , Literal(..)
   , Term(..)
+    -- * Annotations
+  , fmapExpr
+  , annotateExpr
   ) where
 
+import Control.Monad.Identity
 import Data.GADT.Compare (GEq (geq))
 import Data.Kind
 import Data.Nat (Nat (..))
@@ -29,6 +33,7 @@ import GHC.Generics (Generic)
 import C.Expr.Syntax.Literal
 import C.Expr.Syntax.Name
 import C.Expr.Syntax.TTG
+import C.Expr.Syntax.TTG.Parse
 import C.Expr.Syntax.Type
 import C.Expr.Util.TestEquality
 
@@ -234,3 +239,44 @@ data Term ctx p =
 deriving stock instance ( Eq   ( XApp p ), Eq   ( XVar p ) ) => Eq   ( Term ctx p )
 deriving stock instance ( Ord  ( XApp p ), Ord  ( XVar p ) ) => Ord  ( Term ctx p )
 deriving stock instance ( Show ( XApp p ), Show ( XVar p ) ) => Show ( Term ctx p )
+
+{-------------------------------------------------------------------------------
+  Annotations
+-------------------------------------------------------------------------------}
+
+fmapExpr :: (ann -> ann') -> Expr ctx (Ps ann) -> Expr ctx (Ps ann')
+fmapExpr f = runIdentity . annotateExpr (\_name -> pure . f)
+
+annotateExpr ::
+     forall m ctx ann ann'.
+     Applicative m
+  => (Name -> ann -> m ann')
+  -> Expr ctx (Ps ann)
+  -> m (Expr ctx (Ps ann'))
+annotateExpr f = \case
+    Term t           -> Term              <$> annotateTerm f t
+    TyApp qual args  -> TyApp qual        <$> traverse (annotateExpr f) args
+    VaApp x fun args -> VaApp (aux x) fun <$> traverse (annotateExpr f) args
+  where
+    aux :: XApp (Ps ann) -> XApp (Ps ann')
+    aux NoXApp = NoXApp
+
+annotateTerm ::
+     forall m ctx ann ann'.
+     Applicative m
+  => (Name -> ann -> m ann')
+  -> Term ctx (Ps ann)
+  -> m (Term ctx (Ps ann'))
+annotateTerm f = \case
+    Literal lit ->
+      pure $ Literal lit
+    LocalParam param ->
+      pure $ LocalParam param
+    Var ann nm args  ->
+      pure Var
+        <*> aux nm ann
+        <*> pure nm
+        <*> traverse (annotateExpr f) args
+  where
+    aux :: Name -> XVar (Ps ann) -> m (XVar (Ps ann'))
+    aux nm' (XVarPs ann) = XVarPs <$> f nm' ann

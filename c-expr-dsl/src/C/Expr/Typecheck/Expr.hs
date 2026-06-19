@@ -254,13 +254,13 @@ isAtomicType = \case
 
 data Fun ctx =
     FunLocal ( Idx ctx )
-  | FunVar   Identifier
+  | FunVar   Identifier (Maybe QuantTy)
   | forall arity. FunVaFun ( VaFun arity )
 
 funName :: Fun ctx -> FunName
 funName = \case
-    FunLocal i  -> Text.pack ( "local_param_" ++ show i )
-    FunVar   n  -> getIdentifier n
+    FunLocal i -> Text.pack ( "local_param_" ++ show i )
+    FunVar n _ann -> getIdentifier n
     FunVaFun mf -> Text.pack ( show mf )
 
 typFunName :: TyQual n -> FunName
@@ -384,7 +384,7 @@ getPlatform =
   TcPureM \ ( TcEnv ( TcGblEnv { tcPlatform = plat } ) _ ) ->
     pure plat
 
-lookupTyEnv :: Identifier -> TcPureM ( Maybe ( Quant ( FunValue, Type Ty ) ) )
+lookupTyEnv :: Identifier -> TcPureM (Maybe QuantTy)
 lookupTyEnv varNm = TcPureM \ ( TcEnv ( TcGblEnv { tcTypeEnv } ) _ ) ->
   return $ Map.lookup varNm tcTypeEnv
 
@@ -443,7 +443,7 @@ newMetaTyVarTy metaOrigin metaTyVarName = do
 -- | 'Control.Monad.Trans.Control.liftBaseWith' for t'TcPureM' and 'TcGenM'.
 liftBaseTcM :: ( forall x. TcPureM x -> TcPureM x ) -> TcGenM a -> TcGenM a
 liftBaseTcM morph g = do
-  s0 <- lift $ State.get
+  s0 <- lift State.get
   u  <- lift $ lift $ State.get
   ( ( ( a, ctsErrs ), subst ), u' ) <-
     liftTcPureM
@@ -756,7 +756,7 @@ instantiate ctOrig instOrig body = do
 -------------------------------------------------------------------------------}
 
 -- | Infer the type of a macro declaration (before constraint solving and generalisation).
-inferTop :: Identifier -> Vec ctx Identifier -> Expr ctx Ps
+inferTop :: Identifier -> Vec ctx Identifier -> Expr ctx (Ps (Maybe QuantTy))
          -> TcUniqueM ( ( ( Expr ctx Tc, ( Vec ctx ( Type Ty ), Type Ty ) ), Cts )
                       , [ ( TcError, SrcSpan ) ] )
 inferTop funNm params body = do
@@ -774,7 +774,7 @@ inferTop funNm params body = do
     ]
   return ( ( ( tcBody, ( paramTys', bodyTy' ) ), cts' ), mbErrs )
 
-inferExpr :: Expr ctx Ps -> TcGenM ( Type Ty, Expr ctx Tc )
+inferExpr :: Expr ctx (Ps (Maybe QuantTy)) -> TcGenM ( Type Ty, Expr ctx Tc )
 inferExpr = \case
   Term tm -> second Term <$> inferTerm tm
   TyApp fun args -> do
@@ -784,21 +784,21 @@ inferExpr = \case
     ( funVal, ( args', resTy ) ) <- inferVaApp ( FunVaFun fun ) args
     return ( resTy, VaApp ( XAppTc funVal ) fun args' )
 
-inferTerm :: Term ctx Ps -> TcGenM ( Type Ty, Term ctx Tc )
+inferTerm :: Term ctx (Ps (Maybe QuantTy)) -> TcGenM ( Type Ty, Term ctx Tc )
 inferTerm = \case
   Literal x ->
     pure (inferLit x, Literal x)
   LocalParam i ->
     do resTy <- liftTcPureM $ lookupLocalParam i
        return ( resTy, LocalParam i )
-  Var NoXVar (NameOrdinary fun) argsList -> Vec.reifyList argsList $ \ args ->
-    do ( funVal, ( args', resTy ) ) <- inferVaApp ( FunVar fun ) args
-       return ( resTy, Var ( XVarTc funVal ) (NameOrdinary fun) ( Vec.toList args' ) )
-  Var NoXVar (NameTagged name tag) argsList -> do
+  Var (XVarPs ann) (NameOrdinary fun) argsList -> Vec.reifyList argsList $ \ args ->
+    do ( funVal, ( args', resTy ) ) <- inferVaApp ( FunVar fun ann ) args
+       return ( resTy, Var ( XVarTc funVal ann ) (NameOrdinary fun) ( Vec.toList args' ) )
+  Var (XVarPs ann) (NameTagged name tag) argsList -> do
     case argsList of
       [] -> pure ()
       _  -> addErrTcGenM $ TaggedNameWithArguments name
-    pure (MacroTypeTy, Var (XVarTc NoFunValue) (NameTagged name tag) [])
+    pure (MacroTypeTy, Var (XVarTc NoFunValue ann) (NameTagged name tag) [])
 
 inferLit :: Literal -> Type Ty
 inferLit = \case
@@ -815,7 +815,7 @@ inferLit = \case
 
 inferTyApp ::
      TyQual n
-  -> Vec nbArgs ( Expr ctx Ps )
+  -> Vec nbArgs ( Expr ctx (Ps (Maybe QuantTy)) )
   -> TcGenM ( Vec nbArgs ( Expr ctx Tc ), Type Ty )
 inferTyApp fun args = do
   let funTy = inferTyFun fun
@@ -838,7 +838,7 @@ inferTyApp fun args = do
 -- Also returns a 'FunValue', which allows evaluating the instantiated function.
 inferVaApp ::
      Fun ctx
-  -> Vec nbArgs ( Expr ctx Ps )
+  -> Vec nbArgs ( Expr ctx (Ps (Maybe QuantTy)) )
   -> TcGenM ( FunValue, ( Vec nbArgs ( Expr ctx Tc ), Type Ty ) )
 inferVaApp fun args = do
   ( funVal, funTy ) <- inferFun fun
@@ -864,8 +864,10 @@ inferFun f = case f of
         -- The value is not consulted, see 'evaluateTerm'.
         ( FunValue @Z funNm $ const NoValue
         , paramTy )
-    FunVar   varNm -> do
-      mbQTy <- liftTcPureM $ lookupTyEnv varNm
+    FunVar varNm ann -> do
+      mbQTy <- case ann of
+        Nothing -> liftTcPureM $ lookupTyEnv varNm
+        Just x  -> pure $ Just x
       case mbQTy of
         Just ( Quant funQTy ) ->
           snd <$>
@@ -885,9 +887,9 @@ inferFun f = case f of
 
 -- | Infer the type of a lambda expression.
 inferLam :: forall ctx
-         .  Identifier         -- ^ name of the function (for error messages)
-         -> Vec ctx Identifier -- ^ local parameters
-         -> Expr ctx Ps  -- ^ function body
+         .  Identifier                    -- ^ name of the function (for error messages)
+         -> Vec ctx Identifier            -- ^ local parameters
+         -> Expr ctx (Ps (Maybe QuantTy)) -- ^ function body
          -> TcGenM ( Expr ctx Tc, ( Vec ctx ( Type Ty ), Type Ty ) )
 inferLam _ VNil body = do
   ( bodyTy, body' ) <- inferExpr body
@@ -1825,8 +1827,9 @@ evaluateExpr :: IntMap Value -> TypeEnv -> Expr ctx Tc -> Value
 evaluateExpr argVals tyEnv = \case
   Term tm  -> evaluateTerm argVals tyEnv tm
   TyApp{}  -> NoValue
-  VaApp ( XAppTc ( NoFunValue ) ) _funName _args -> NoValue
-  VaApp @_ @_ @m ( XAppTc ( FunValue @n _ fn ) ) _funName args ->
+  VaApp ( XAppTc  NoFunValue               ) _funName _args ->
+    NoValue
+  VaApp @_ @_ @m (XAppTc (FunValue @n _ fn)) _funName  args ->
     -- We have stored the function that performs evaluation in the XAppTc
     -- field of the AST. For example, for addition, we have wrapped
     --
@@ -1845,8 +1848,8 @@ evaluateTerm argVals tyEnv = \case
   Literal x -> evaluateLit x
   -- Local macro parameter, e.g. @X@ in @#define AddOne(X) X+1@.
   LocalParam i -> fromMaybe NoValue $ IntMap.lookup (idxToInt i) argVals
-  Var ( XVarTc ( NoFunValue ) ) _nm _args -> NoValue
-  Var ( XVarTc ( FunValue @n _ fn ) ) nm args
+  Var ( XVarTc   NoFunValue         _ ) _nm _args -> NoValue
+  Var ( XVarTc ( FunValue @n _ fn ) _ ) nm args
     -> Vec.reifyList args $ \ ( argsVec :: Vec m ( Expr ctx Tc ) ) ->
         case Nat.eqNat @n @m of
           Nothing ->
@@ -1912,11 +1915,11 @@ naturalMaybe ( ValSType ty ) i =
 -- Also returns the body type (post-inference, pre-quantification) so the
 -- caller can tell whether the macro denotes a type or a value.
 tcExpr ::
-     forall ctx
-  .  TypeEnv
-  -> Identifier         -- ^ name of the macro
-  -> Vec ctx Identifier -- ^ macro arguments
-  -> Expr ctx Ps        -- ^ macro body
+     forall ctx.
+     TypeEnv
+  -> Identifier                    -- ^ name of the macro
+  -> Vec ctx Identifier            -- ^ macro arguments
+  -> Expr ctx (Ps (Maybe QuantTy)) -- ^ macro body
   -> Either MacroTcError ( Type Ty, Quant ( FunValue, Type Ty ) )
 tcExpr tyEnv macroNm args body =
   let plat = Runtime.hostPlatform in
@@ -1941,11 +1944,11 @@ tcExpr tyEnv macroNm args body =
         getFVs noBoundVars $
           freeTyVarsOfTypes $
             fmap ( applySubstNormalise plat ctSubst ) $
-              Vec.toList ( argTys ) ++ [ bodyTy ]
+              Vec.toList argTys ++ [ bodyTy ]
       qtvsList = reverse $ seenTvsRevList qtvsFVs
       ctTvs =
         seenTvs $ getFVs noBoundVars $
-          freeTyVarsOfTypes ( fmap ( applySubstNormalise plat ctSubst ) $ map fst simpleCts )
+          freeTyVarsOfTypes (applySubstNormalise plat ctSubst <$> map fst simpleCts)
       ambigs = ctTvs IntSet.\\ seenTvs qtvsFVs
 
     debugTraceM $

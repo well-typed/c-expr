@@ -10,7 +10,11 @@ import GHC.Generics (Generic)
   Definition
 -------------------------------------------------------------------------------}
 
--- | Macro arguments
+-- | A C identifier
+--
+-- Used for any name in macro source: macro parameters, free variables, typedef
+-- names, and the identifier part of a tagged type (e.g. the @Foo@ in
+-- @struct Foo@).
 newtype Identifier = Identifier {
       getIdentifier :: Text
     }

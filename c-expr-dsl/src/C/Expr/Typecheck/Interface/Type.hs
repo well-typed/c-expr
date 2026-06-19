@@ -18,8 +18,7 @@ import Data.Vec.Lazy (Vec (..))
 import DeBruijn (idxToInt)
 
 import C.Expr.Syntax qualified as M
-import C.Expr.Syntax.Identifier
-import C.Expr.Syntax.Name
+import C.Expr.Syntax.TTG.Parse
 import C.Expr.Util.Panic
 
 data Expr var =
@@ -27,7 +26,7 @@ data Expr var =
   | Var var
   | App Qual (Expr var)
 
-deriving stock instance Eq var   => Eq         (Expr var)
+deriving stock instance Eq   var => Eq         (Expr var)
 deriving stock instance Show var => Show       (Expr var)
 deriving stock instance             Functor     Expr
 deriving stock instance             Foldable    Expr
@@ -46,8 +45,6 @@ data Qual =
 data ConversionError =
     -- | Unexpected value literal (e.g., the integer @42@)
     UnexpectedValueLiteralInType String
-    -- | Unexpected named function call in type
-  | UnexpectedFunctionCallInType Name
     -- | Unexpected local parameter in type
   | UnexpectedLocalParameterInType Int
     -- | A unary type function received multiple arguments
@@ -58,36 +55,31 @@ data ConversionError =
 
 instance Exception ConversionError
 
-fromExpr ::
-     forall ctx m var p. Applicative m
-  => (Identifier -> var)
-  -> (M.TagKind -> Identifier -> m var)
-  -> M.Expr ctx p
-  -> m (Expr var)
-fromExpr injectType injectTaggedType = go
+-- | Translate into the typechecked AST assuming the expression is a type.
+--
+-- For variables, we don't use their name but their annotations.
+fromExpr :: forall ctx ann. M.Expr ctx (Ps ann) -> Expr ann
+fromExpr = go
   where
-    go :: M.Expr ctx p -> m (Expr var)
+    go :: M.Expr ctx (Ps ann) -> Expr ann
     go = \case
       M.Term (M.Literal x) ->
         fromLit x
       M.Term (M.LocalParam i) ->
         panicPure $ show $ UnexpectedLocalParameterInType (idxToInt i)
-      M.Term (M.Var _ nm []) -> case nm of
-        NameOrdinary nm'     -> pure $ Var (injectType nm')
-        NameTagged   nm' tag -> Var <$> injectTaggedType tag nm'
-      M.Term (M.Var _ nm _ ) ->
-        panicPure $ show $ UnexpectedFunctionCallInType nm
+      M.Term (M.Var (XVarPs{psAnn}) _nm _args) ->
+        Var psAnn
       M.TyApp fun args -> do
         let arg = myHead args
         case fun of
-          M.Pointer -> App Pointer <$> (go arg)
-          M.Const   -> App Const   <$> (go arg)
+          M.Pointer -> App Pointer $ go arg
+          M.Const   -> App Const   $ go arg
       M.VaApp _ fun _ ->
         panicPure $ show $ UnexpectedValueFunctionApplicationInType (show fun)
 
-    fromLit :: M.Literal -> m (Expr var)
+    fromLit :: M.Literal -> Expr ann
     fromLit = \case
-      M.TypeLit x         -> pure $ TypeLit x
+      M.TypeLit x         -> TypeLit x
       M.ValueLit x        -> panicPure $ show $ UnexpectedValueLiteralInType (show x)
 
     myHead :: Vec ('S n) a -> a
@@ -95,4 +87,4 @@ fromExpr injectType injectTaggedType = go
       (x ::: VNil) ->
         x
       (_ ::: _ ::: _) ->
-        panicPure $ show $ UnexpectedMultipleArgumentsToUnaryTypeFunction
+        panicPure $ show UnexpectedMultipleArgumentsToUnaryTypeFunction
