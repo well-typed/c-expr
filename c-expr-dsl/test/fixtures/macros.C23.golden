@@ -78,3 +78,5 @@ BAD_KEYWORD_AS_PARAM: Left <parse error>
 TYPE_FUN_WITH_PARAM: Right Term (Literal (TypeLit (TypeInt Nothing (Just SizeInt))))
 BAD_TERNARY: Left <parse error>
 BAD_LONG_DOUBLE: Left <parse error>
+PACK_START: Left <parse error>
+PACK_FINISH: Left <parse error>

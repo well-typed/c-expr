@@ -37,9 +37,11 @@ module C.Expr.Syntax (
   , XVar(..)
   , XApp(..)
   , fmapExpr
+  , annotateMacro
   , annotateExpr
   ) where
 
+import Control.Monad.Identity (Identity (runIdentity))
 import Data.Kind qualified as Hs
 import Data.Type.Equality ((:~:) (..))
 import Data.Type.Nat qualified as Nat
@@ -76,10 +78,12 @@ instance Eq ann => Eq (Macro ann) where
 deriving stock instance (Show ann) => Show (Macro ann)
 
 instance Functor Macro where
-  fmap f Macro{macroLoc, macroName, macroParams, macroExpr} =
-    Macro{
-      macroLoc
-    , macroName
-    , macroParams
-    , macroExpr = fmapExpr f macroExpr
-    }
+  fmap f = runIdentity . annotateMacro (\_name -> pure . f)
+
+annotateMacro ::
+     Applicative m
+  => (Name -> ann -> m ann')
+  -> Macro ann
+  -> m (Macro ann')
+annotateMacro f Macro{macroLoc, macroName, macroParams, macroExpr} =
+    Macro macroLoc macroName macroParams <$> annotateExpr f macroExpr

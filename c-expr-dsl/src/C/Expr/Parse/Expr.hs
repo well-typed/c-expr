@@ -70,7 +70,29 @@ parseMacro cStd = do
     -- identifier in @size_t + 1@) but leaves tokens unconsumed, the whole
     -- attempt is abandoned and we fall back to the expression parser.
     bodyExpr :: Vec ctx Identifier -> Parser (Expr ctx (Ps ()))
-    bodyExpr macroParams = try (parseMacroType cStd macroParams <* eof) <|> exprTuple cStd macroParams
+    bodyExpr macroParams = do
+      rejectPragma
+      try (parseMacroType cStd macroParams <* eof) <|> exprTuple cStd macroParams
+
+-- | Reject macro bodies that begin with the @_Pragma@ operator
+--
+-- @_Pragma@ is the C99 preprocessor operator (C standard §6.10.9), equivalent
+-- to @#pragma@. A macro whose body uses it, such as
+--
+-- > #define PACK_START _Pragma("pack(1)")
+--
+-- expands to a preprocessing directive, not a C value or type expression. We
+-- reject such macros here rather than misparsing @_Pragma@ as a reference to a
+-- variable of that name, which would otherwise survive parsing and only fail
+-- later (during name resolution or typechecking) with a misleading message.
+rejectPragma :: Parser ()
+rejectPragma =
+    notFollowedBy (token isPragma) <?> "C expression (not a _Pragma operator)"
+  where
+    isPragma :: Token TokenSpelling -> Maybe ()
+    isPragma t
+      | getTokenSpelling (tokenSpelling t) == "_Pragma" = Just ()
+      | otherwise                                       = Nothing
 
 formalParams :: Parser [Identifier]
 formalParams = parens $ parseIdentifier `sepBy` comma

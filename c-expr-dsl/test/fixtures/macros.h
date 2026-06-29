@@ -212,3 +212,8 @@ y
 
 // 'long double' is not supported (TypeFloat only covers float/double).
 #define BAD_LONG_DOUBLE long double
+
+// '_Pragma' is the C99 preprocessor operator, equivalent to '#pragma'. It
+// expands to a preprocessing directive, not a C expression, so we reject it.
+#define PACK_START _Pragma("pack(1)")
+#define PACK_FINISH _Pragma("pack()")
