@@ -1,18 +1,15 @@
 module C.Expr.Syntax.Name (
-    Name(..)
+    TagKind(..)
+  , Name(..)
   ) where
 
-import Data.String
-import Data.Text (Text)
-import GHC.Generics (Generic)
+import C.Expr.Syntax.Identifier
 
-{-------------------------------------------------------------------------------
-  Definition
--------------------------------------------------------------------------------}
+-- | Tag kind for elaborated types
+data TagKind = TagStruct | TagUnion | TagEnum
+  deriving stock (Eq, Ord, Show)
 
--- | Macro arguments
-newtype Name = Name {
-      getName :: Text
-    }
-  deriving newtype (Show, Eq, Ord, IsString, Semigroup)
-  deriving stock (Generic)
+data Name =
+    NameOrdinary Identifier
+  | NameTagged   Identifier TagKind
+  deriving stock (Eq, Ord, Show)

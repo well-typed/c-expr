@@ -19,7 +19,7 @@ import Data.Vec.Lazy (Vec)
 import DeBruijn (Idx)
 
 import C.Expr.Syntax qualified as M
-import C.Expr.Syntax.Name
+import C.Expr.Syntax.TTG.Parse
 import C.Expr.Util.Panic
 
 data Expr ctx var =
@@ -52,32 +52,32 @@ data ConversionError =
 
 instance Exception ConversionError
 
+-- | Translate into the typechecked AST assuming the expression is a value.
+--
+-- For variables, we don't use their name but their annotations.
 fromExpr ::
-     forall ctx var p.
-     (Name -> var)
-  -> M.Expr ctx p
-  -> Expr ctx var
-fromExpr injectValue = go
+     forall ctx ann.
+     M.Expr ctx (Ps ann)
+  -> Expr ctx ann
+fromExpr = go
   where
-    go :: M.Expr ctx p -> Expr ctx var
+    go :: M.Expr ctx (Ps ann) -> Expr ctx ann
     go = \case
       M.Term (M.Literal x) ->
         fromLit x
       M.Term (M.LocalParam i) ->
         LocalParam i
-      M.Term (M.Var _ nm args) ->
-        Var (injectValue nm) (map go args)
+      M.Term (M.Var XVarPs{psAnn} _nm args) ->
+        Var psAnn (map go args)
       M.TyApp fun _ ->
         panicPure $ show $ UnexpectedTypeFunctionApplicationInValue (show fun)
       M.VaApp _ fun args ->
         App fun $ fmap go args
 
-    fromLit :: M.Literal -> Expr ctx var
+    fromLit :: M.Literal -> Expr ctx ann
     fromLit = \case
       M.TypeLit x ->
         panicPure $ show $ UnexpectedTypeInValue (show x)
-      M.TypeTagged tag nm ->
-        panicPure $ show $ UnexpectedTypeInValue (show (tag, nm))
       M.ValueLit x -> Literal $ case x of
         M.ValueInt y    -> M.ValueInt y
         M.ValueFloat y  -> M.ValueFloat y

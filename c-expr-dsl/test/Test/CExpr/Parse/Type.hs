@@ -11,6 +11,7 @@ import C.Expr.Syntax
 import Clang.CStandard
 
 import Test.CExpr.Parse.Infra
+import Test.CExpr.Typecheck.Infra (mtagged, mvar)
 
 {-------------------------------------------------------------------------------
   Top-level
@@ -65,7 +66,7 @@ tests_voidBool cStd = [
     , testCase "bool (identifier)" $
         -- bool
         checkType cStd [ident "bool"]
-          @?= Right (Term (Var NoXVar "bool" []))
+          @?= Right (mvar "bool")
     ]
 
 {-------------------------------------------------------------------------------
@@ -172,18 +173,18 @@ tests_named cStd = [
       testCase "size_t" $
         -- size_t
         checkType cStd [ident "size_t"]
-          @?= Right (Term (Var NoXVar "size_t" []))
+          @?= Right (mvar "size_t")
     , testCase "uint32_t" $
         -- uint32_t
         checkType cStd [ident "uint32_t"]
-          @?= Right (Term (Var NoXVar "uint32_t" []))
+          @?= Right (mvar "uint32_t")
       -- An identifier token spelled "int" is treated as a named type,
       -- not as the built-in int keyword (libclang always tokenizes keywords
       -- as CXToken_Keyword, so this case is mainly for documentation)
     , testCase "int as identifier" $
         -- int  (tokenised as CXToken_Identifier, not CXToken_Keyword)
         checkType cStd [ident "int"]
-          @?= Right (Term (Var NoXVar "int" []))
+          @?= Right (mvar "int")
     ]
 
 {-------------------------------------------------------------------------------
@@ -195,15 +196,15 @@ tests_tagged cStd = [
       testCase "struct Foo" $
         -- struct Foo
         checkType cStd [kw "struct", ident "Foo"]
-          @?= Right (Term $ Literal (TypeTagged TagStruct "Foo"))
+          @?= Right (mtagged "Foo" TagStruct)
     , testCase "union Bar" $
         -- union Bar
         checkType cStd [kw "union", ident "Bar"]
-          @?= Right (Term $ Literal (TypeTagged TagUnion "Bar"))
+          @?= Right (mtagged "Bar" TagUnion)
     , testCase "enum Baz" $
         -- enum Baz
         checkType cStd [kw "enum", ident "Baz"]
-          @?= Right (Term $ Literal (TypeTagged TagEnum "Baz"))
+          @?= Right (mtagged "Baz" TagEnum)
     ]
 
 {-------------------------------------------------------------------------------
@@ -227,11 +228,11 @@ tests_const cStd = [
     , testCase "const size_t" $
         -- const size_t
         checkType cStd [kw "const", ident "size_t"]
-          @?= Right (TyApp Const (Term (Var NoXVar "size_t" []) ::: VNil))
+          @?= Right (TyApp Const (mvar "size_t" ::: VNil))
     , testCase "const struct Foo" $
         -- const struct Foo
         checkType cStd [kw "const", kw "struct", ident "Foo"]
-          @?= Right (TyApp Const (Term (Literal (TypeTagged TagStruct "Foo")) ::: VNil))
+          @?= Right (TyApp Const (mtagged "Foo" TagStruct ::: VNil))
     ]
 
 {-------------------------------------------------------------------------------
@@ -255,11 +256,11 @@ tests_pointer cStd = [
     , testCase "size_t*" $
         -- size_t *
         checkType cStd [ident "size_t", punc "*"]
-          @?= Right (TyApp Pointer (Term (Var NoXVar "size_t" []) ::: VNil))
+          @?= Right (TyApp Pointer (mvar "size_t" ::: VNil))
     , testCase "struct Foo*" $
         -- struct Foo *
         checkType cStd [kw "struct", ident "Foo", punc "*"]
-          @?= Right (TyApp Pointer (Term (Literal (TypeTagged TagStruct "Foo")) ::: VNil))
+          @?= Right (TyApp Pointer (mtagged "Foo" TagStruct ::: VNil))
     ]
 
 {-------------------------------------------------------------------------------
@@ -290,7 +291,7 @@ tests_combined cStd = [
     , testCase "const struct Foo**" $
         -- const struct Foo **
         checkType cStd [kw "const", kw "struct", ident "Foo", punc "*", punc "*"]
-          @?= Right (TyApp Pointer (TyApp Pointer (TyApp Const (Term (Literal (TypeTagged TagStruct "Foo")) ::: VNil) ::: VNil) ::: VNil))
+          @?= Right (TyApp Pointer (TyApp Pointer (TyApp Const (mtagged "Foo" TagStruct ::: VNil) ::: VNil) ::: VNil))
     , testCase "unsigned long long int" $
         -- unsigned long long int
         checkType cStd [kw "unsigned", kw "long", kw "long", kw "int"]

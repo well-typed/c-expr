@@ -93,11 +93,14 @@ parseMacrosFixture testCStd fixturePath = do
     cStd :: ClangCStandard
     cStd = ClangCStandard (testCStandardToCStandard testCStd) DisableGnu
 
-    formatEntry :: (Text, Either MacroParseError Macro) -> String
+    formatEntry ::
+         Show ann
+      => (Text, Either MacroParseError (Macro ann))
+      -> String
     formatEntry (name, result) =
         Text.unpack name ++ ": " ++ formatResult result
 
-    formatResult :: Either MacroParseError Macro -> String
+    formatResult :: Show ann => Either MacroParseError (Macro ann) -> String
     formatResult (Right (Macro{macroExpr})) = "Right " ++ show macroExpr
     formatResult (Left _)                   = "Left <parse error>"
 

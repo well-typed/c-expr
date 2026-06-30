@@ -1,5 +1,4 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE MagicHash         #-}
 
 #if __GLASGOW_HASKELL__ >=908
 {-# LANGUAGE TypeAbstractions #-}
@@ -16,8 +15,9 @@ module C.Expr.Typecheck.Type (
     -- * Pass
   , Tc
     -- * Type inference
+  , QuantTy
+  , simpleType
   , TypeEnv
-  , buildTypedefEnv
   , ParamEnv
     -- ** Type system
   , Type(..)
@@ -102,11 +102,9 @@ import Data.IntMap (IntMap)
 import Data.Kind qualified as Hs
 import Data.List.NonEmpty qualified as NE
 import Data.Map (Map)
-import Data.Map qualified as Map
 import Data.Maybe (fromJust)
 import Data.Nat (Nat (..))
 import Data.Proxy
-import Data.Set (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Type.Equality
@@ -464,46 +462,51 @@ instance Show ( ClassTyCon n ) where
 -- Use @'Maybe' 'FunValue'@ and emit typecheck error when value required but
 -- unavailable.
 
--- | The typing environment: every in-scope name (@typedef@ or previously
--- typechecked macro) mapped to its quantified type.
-type TypeEnv  = Map Name ( Quant ( FunValue, Type Ty ) )
+type QuantTy = Quant (FunValue, Type Ty)
+-- | The typing environment: every in-scope typechecked macro mapped to its
+--   quantified type.
+--
+-- For @typedef@s we assume that the annotation informs us about the type.
+type TypeEnv = Map Identifier QuantTy
 -- | De Bruijn indexed environment of parameters /local to the macro
 -- definition/.
 type ParamEnv = IntMap   ( Type Ty )
-
--- | Build a 'TypeEnv' from a list of typedef names.
---
--- Each name is registered as a type alias (with kind 'MacroTypeTy') and a
--- dummy 'FunValue' that is never invoked.
---
--- Note: @struct@, @union@, and @enum@ types should /not/ be added here.
--- Tagged types always parse as 'TypeTagged' literals, never as bare 'Var'
--- nodes, so they are resolved through the @injectTagged@ callback of
--- 'C.Expr.Typecheck.tcMacros' instead.
-
--- TODO <https://github.com/well-typed/c-expr/issues/7>
---
--- Should simplify significantly when we use @'Maybe' 'FunValue'@.
-buildTypedefEnv :: Set Name -> TypeEnv
-buildTypedefEnv =
-    Map.fromSet $ \nm ->
-      Quant @Z $ \VNil ->
-        QuantTyBody []
-          ( FunValue @Z (getName nm) (\VNil -> NoValue)
-          , MacroTypeTy )
 
 {-------------------------------------------------------------------------------
   Pass definition
 -------------------------------------------------------------------------------}
 
+-- | The typecheck pass.
+--
+-- Unlike the parse pass 'C.Expr.Syntax.TTG.Parse.Ps', 'Tc' takes no annotation
+-- parameter.
+--
+-- 1. The parse pass allows arbitrary user annotations.
+--
+-- 2. The typechecker 'C.Expr.Typecheck.tcMacros' gives the user the option of
+-- specifying a type given an annotation (i.e., @typeOfAnn@).
+--
+-- 3. If the user gives such a type, it is stored in 'tcUserType'.
 type Tc :: Pass
 data Tc a
 
 newtype instance XApp Tc = XAppTc FunValue
   deriving stock ( Eq, Show, Generic )
 
-data instance XVar Tc = XVarTc FunValue
+data instance XVar Tc = XVarTc {
+      tcFunValue :: FunValue
+      -- | If a variable refers to a type that is unavailable to the
+      -- typechecker, the user must provide a type. For example, when a macro
+      -- refers to a @typedef@, it must be labeled as a 'simpleType'.
+    , tcUserType :: Maybe QuantTy
+    }
   deriving stock ( Eq, Show, Generic )
+
+-- | The type of simple, unparameterised types such as @typedef@s.
+simpleType :: Quant (FunValue, Type Ty)
+simpleType =
+    Quant @Z $ \VNil ->
+      QuantTyBody [] (NoFunValue , MacroTypeTy)
 
 -- | A singleton for the type of a value, for use in evaluation of macros.
 newtype ValSType ty = ValSType ( Runtime.SType ValSType ty )
@@ -552,10 +555,15 @@ witnessValSType ( ValSType ty ) f =
 --   void foo(int arr[M(N) + N]);
 -- @
 data FunValue where
-  FunValue :: SNatI n => FunName -> ( Vec n Value -> Value ) -> FunValue
+  NoFunValue :: FunValue
+  FunValue   :: SNatI n => FunName -> ( Vec n Value -> Value ) -> FunValue
 instance Eq FunValue where
+  NoFunValue    == NoFunValue    = True
   FunValue f1 _ == FunValue f2 _ = f1 == f2
+  _             == _             = False
+
 instance Show FunValue where
+  show   NoFunValue      = "NoFunValue"
   show ( FunValue nm _ ) = Text.unpack nm
 
 {-------------------------------------------------------------------------------
@@ -592,9 +600,9 @@ pprCtOrigin = \case
 -- | Why did we create a new metavariable?
 data MetaOrigin
   = ExpectedFunTyResTy !FunName
-  | ExpectedVarTy !Name
+  | ExpectedVarTy !Identifier
   | Inst { instOrigin :: !InstOrigin, instPos :: !Int }
-  | FunParam !Name !( Name, Natural )
+  | FunParam !Identifier !( Identifier, Natural )
   | IntLitMeta !IntegerLiteral
   | FloatLitMeta !FloatingLiteral
 
@@ -609,12 +617,12 @@ pprMetaOrigin :: MetaOrigin -> Text
 pprMetaOrigin = \case
   ExpectedFunTyResTy funNm ->
     "the result type of '" <> Text.pack ( show funNm ) <> "'"
-  ExpectedVarTy ( Name varNm ) ->
+  ExpectedVarTy ( Identifier varNm ) ->
     "the type of the identifier '" <> varNm <> "'"
   Inst funNm i ->
     "the " <> speakNth i <> " type argument in the instantiation of '" <> Text.pack ( show funNm ) <> "'"
-  FunParam ( Name funNm ) ( param, i ) ->
-    "the type of the " <> speakNth (fromIntegral i) <> " parameter of '" <> funNm <> "' with name '" <> getName param <> "'"
+  FunParam ( Identifier funNm ) ( param, i ) ->
+    "the type of the " <> speakNth (fromIntegral i) <> " parameter of '" <> funNm <> "' with name '" <> getIdentifier param <> "'"
   IntLitMeta i ->
     "the type of the integer literal '" <> Text.pack ( show i ) <> "'"
   FloatLitMeta f ->
@@ -709,7 +717,7 @@ pattern String = Tuple (SS' (SS' SZ)) (Ptr CharTy ::: HsIntTy ::: VNil)
 pattern Ptr :: Type Ty -> Type Ty
 pattern Ptr ty = Data PtrTyCon (ty ::: VNil)
 
-pattern Tuple :: () => ( nbArgs ~ S (S n) ) => (SNat (S (S n))) -> Vec nbArgs (Type Ty) -> Type Ty
+pattern Tuple :: () => ( nbArgs ~ S (S n) ) => SNat (S (S n)) -> Vec nbArgs (Type Ty) -> Type Ty
 pattern Tuple l as = Data ( TupleTyCon l ) as
 
 pattern PlusRes :: Type Ty -> Type Ty
@@ -737,7 +745,7 @@ pattern ShiftRes a = FamApp ShiftResTyCon ( a ::: VNil )
 pattern IntTy :: Type Ty
 pattern IntTy = IntLike ( PrimIntInfoTy ( CIntegralType ( Runtime.IntLike ( Runtime.Int Runtime.Signed ) ) ) )
 pattern HsIntTy :: Type Ty
-pattern HsIntTy = IntLike ( PrimIntInfoTy ( HsIntType ) )
+pattern HsIntTy = IntLike ( PrimIntInfoTy HsIntType )
 pattern CharTy :: Type Ty
 pattern CharTy = IntLike ( PrimIntInfoTy ( CIntegralType ( Runtime.CharLike Runtime.Char ) ) )
 

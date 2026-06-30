@@ -1,6 +1,6 @@
 TY_VOID: Right Term (Literal (TypeLit TypeVoid))
 TY_BOOL: Right Term (Literal (TypeLit TypeBool))
-TY_BOOL_C23: Right Term (Var NoXVar "bool" [])
+TY_BOOL_C23: Right Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "bool") [])
 TY_INT: Right Term (Literal (TypeLit (TypeInt Nothing (Just SizeInt))))
 TY_SIGNED: Right Term (Literal (TypeLit (TypeInt (Just Signed) Nothing)))
 TY_UNSIGNED: Right Term (Literal (TypeLit (TypeInt (Just Unsigned) Nothing)))
@@ -40,15 +40,15 @@ CONST_PTR_CHAIN_6: Right TyApp Const (TyApp Pointer (TyApp Const (TyApp Pointer 
 CONST_PTR_CHAIN_7: Right TyApp Const (TyApp Pointer (TyApp Pointer (TyApp Pointer (TyApp Pointer (TyApp Const (Term (Literal (TypeLit (TypeInt Nothing (Just SizeInt)))) ::: VNil) ::: VNil) ::: VNil) ::: VNil) ::: VNil) ::: VNil)
 CONST_PTR_CHAIN_8: Right TyApp Const (TyApp Pointer (TyApp Pointer (TyApp Pointer (TyApp Pointer (TyApp Const (Term (Literal (TypeLit (TypeInt Nothing (Just SizeInt)))) ::: VNil) ::: VNil) ::: VNil) ::: VNil) ::: VNil) ::: VNil)
 CONST_PTR_CHAIN_9: Right TyApp Pointer (TyApp Const (TyApp Pointer (TyApp Pointer (TyApp Pointer (TyApp Pointer (Term (Literal (TypeLit (TypeInt Nothing (Just SizeInt)))) ::: VNil) ::: VNil) ::: VNil) ::: VNil) ::: VNil) ::: VNil)
-TY_STRUCT_FOO: Right Term (Literal (TypeTagged TagStruct "Foo"))
-TY_UNION_BAR: Right Term (Literal (TypeTagged TagUnion "Bar"))
-TY_ENUM_BAZ: Right Term (Literal (TypeTagged TagEnum "Baz"))
-TY_STRUCT_FOO_PTR: Right TyApp Pointer (Term (Literal (TypeTagged TagStruct "Foo")) ::: VNil)
-TY_SIZE_T: Right Term (Var NoXVar "size_t" [])
-TY_UINT32_T: Right Term (Var NoXVar "uint32_t" [])
-TY_CONST_SIZE_T: Right TyApp Const (Term (Var NoXVar "size_t" []) ::: VNil)
-TY_SIZE_T_PTR: Right TyApp Pointer (Term (Var NoXVar "size_t" []) ::: VNil)
-TY_MACRO_REF: Right Term (Var NoXVar "EXPR_FORTY_TWO" [])
+TY_STRUCT_FOO: Right Term (Var (XVarPs {psAnn = ()}) (NameTagged "Foo" TagStruct) [])
+TY_UNION_BAR: Right Term (Var (XVarPs {psAnn = ()}) (NameTagged "Bar" TagUnion) [])
+TY_ENUM_BAZ: Right Term (Var (XVarPs {psAnn = ()}) (NameTagged "Baz" TagEnum) [])
+TY_STRUCT_FOO_PTR: Right TyApp Pointer (Term (Var (XVarPs {psAnn = ()}) (NameTagged "Foo" TagStruct) []) ::: VNil)
+TY_SIZE_T: Right Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "size_t") [])
+TY_UINT32_T: Right Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "uint32_t") [])
+TY_CONST_SIZE_T: Right TyApp Const (Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "size_t") []) ::: VNil)
+TY_SIZE_T_PTR: Right TyApp Pointer (Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "size_t") []) ::: VNil)
+TY_MACRO_REF: Right Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "EXPR_FORTY_TWO") [])
 EXPR_ZERO: Right Term (Literal (ValueLit (ValueInt (IntegerLiteral {integerLiteralType = Int Signed, integerLiteralValue = 0}))))
 EXPR_ONE: Right Term (Literal (ValueLit (ValueInt (IntegerLiteral {integerLiteralType = Int Signed, integerLiteralValue = 1}))))
 EXPR_FORTY_TWO: Right Term (Literal (ValueLit (ValueInt (IntegerLiteral {integerLiteralType = Int Signed, integerLiteralValue = 42}))))
@@ -68,9 +68,9 @@ FUNC_NEG: Right VaApp NoXApp MUnaryMinus (Term (LocalParam 0) ::: VNil)
 FUNC_MULTIPLE_LOCAL_PARAMS: Right VaApp NoXApp MAdd (Term (LocalParam 3) ::: VaApp NoXApp MSub (Term (LocalParam 2) ::: VaApp NoXApp MAdd (Term (LocalParam 1) ::: Term (LocalParam 0) ::: VNil) ::: VNil) ::: VNil)
 FUNC_SINGLELINE: Right VaApp NoXApp MMult (Term (LocalParam 1) ::: Term (LocalParam 0) ::: VNil)
 FUNC_MULTILINE: Right VaApp NoXApp MMult (Term (LocalParam 1) ::: Term (LocalParam 0) ::: VNil)
-EXPR_REF_ADD: Right VaApp NoXApp MAdd (Term (Var NoXVar "EXPR_ONE" []) ::: Term (Var NoXVar "EXPR_FORTY_TWO" []) ::: VNil)
-EXPR_CALL_ADD: Right Term (Var NoXVar "FUNC_ADD" [Term (Literal (ValueLit (ValueInt (IntegerLiteral {integerLiteralType = Int Signed, integerLiteralValue = 1})))),Term (Literal (ValueLit (ValueInt (IntegerLiteral {integerLiteralType = Int Signed, integerLiteralValue = 2}))))])
-EXPR_CALL_NESTED: Right VaApp NoXApp MAdd (Term (Var NoXVar "FUNC_ADD" [Term (Var NoXVar "EXPR_ONE" []),Term (Var NoXVar "EXPR_FORTY_TWO" [])]) ::: Term (Literal (ValueLit (ValueInt (IntegerLiteral {integerLiteralType = Int Signed, integerLiteralValue = 1})))) ::: VNil)
+EXPR_REF_ADD: Right VaApp NoXApp MAdd (Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "EXPR_ONE") []) ::: Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "EXPR_FORTY_TWO") []) ::: VNil)
+EXPR_CALL_ADD: Right Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "FUNC_ADD") [Term (Literal (ValueLit (ValueInt (IntegerLiteral {integerLiteralType = Int Signed, integerLiteralValue = 1})))),Term (Literal (ValueLit (ValueInt (IntegerLiteral {integerLiteralType = Int Signed, integerLiteralValue = 2}))))])
+EXPR_CALL_NESTED: Right VaApp NoXApp MAdd (Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "FUNC_ADD") [Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "EXPR_ONE") []),Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "EXPR_FORTY_TWO") [])]) ::: Term (Literal (ValueLit (ValueInt (IntegerLiteral {integerLiteralType = Int Signed, integerLiteralValue = 1})))) ::: VNil)
 CAST_SINGLE_NOKW: Left <parse error>
 CAST_SINGLE_KW: Left <parse error>
 CAST_MULTI_KW: Left <parse error>
@@ -78,3 +78,5 @@ BAD_KEYWORD_AS_PARAM: Left <parse error>
 TYPE_FUN_WITH_PARAM: Right Term (Literal (TypeLit (TypeInt Nothing (Just SizeInt))))
 BAD_TERNARY: Left <parse error>
 BAD_LONG_DOUBLE: Left <parse error>
+PACK_START: Left <parse error>
+PACK_FINISH: Left <parse error>

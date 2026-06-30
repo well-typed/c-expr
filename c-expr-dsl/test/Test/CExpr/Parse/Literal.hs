@@ -69,21 +69,21 @@ macroNameTok :: Token TokenSpelling
 macroNameTok = ident "FOO"
 
 -- | Extract a character literal from a parsed object-like macro body.
-getCharLit :: Either e Macro -> Maybe CharLiteral
+getCharLit :: Either e (Macro ann) -> Maybe CharLiteral
 getCharLit (Right Macro{macroExpr}) = case macroExpr of
     Term (Literal (ValueLit (ValueChar c))) -> Just c
     _                                        -> Nothing
 getCharLit _ = Nothing
 
 -- | Extract a string literal from a parsed object-like macro body.
-getStrLit :: Either e Macro -> Maybe StringLiteral
+getStrLit :: Either e (Macro ann) -> Maybe StringLiteral
 getStrLit (Right Macro{macroExpr}) = case macroExpr of
     Term (Literal (ValueLit (ValueString s))) -> Just s
     _                                          -> Nothing
 getStrLit _ = Nothing
 
 -- | Extract an integer value from a parsed object-like macro body.
-getIntVal :: Either e Macro -> Maybe Integer
+getIntVal :: Either e (Macro ann) -> Maybe Integer
 getIntVal (Right Macro{macroExpr}) = case macroExpr of
     Term (Literal (ValueLit (ValueInt i))) -> Just (integerLiteralValue i)
     _                                       -> Nothing

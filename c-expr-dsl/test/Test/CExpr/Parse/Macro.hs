@@ -28,6 +28,7 @@ import Clang.CStandard
 import Clang.HighLevel.Types
 
 import Test.CExpr.Parse.Infra
+import Test.CExpr.Typecheck.Infra (mtagged, mvar)
 
 {-------------------------------------------------------------------------------
   Top-level
@@ -60,7 +61,7 @@ macroNameTok = ident "FOO"
 -- 'TyApp' at its core (bare identifier cases are intentionally excluded
 -- because a bare name is structurally identical in both type and expression
 -- position after the refactor).
-isTypeBody :: Either e Macro -> Bool
+isTypeBody :: Either e (Macro ann) -> Bool
 isTypeBody (Right Macro{macroExpr}) = case macroExpr of
     Term (Literal (TypeLit _)) -> True
     TyApp {}       -> True
@@ -69,7 +70,7 @@ isTypeBody _ = False
 
 -- | True when the macro expression is unambiguously an expression (a literal
 -- or an operator application), not a type.
-isExprBody :: Either e Macro -> Bool
+isExprBody :: Either e (Macro ann) -> Bool
 isExprBody (Right Macro{macroExpr}) = case macroExpr of
     Term (Literal (ValueLit (ValueInt _)))    -> True
     Term (Literal (ValueLit (ValueFloat _)))  -> True
@@ -79,8 +80,11 @@ isExprBody (Right Macro{macroExpr}) = case macroExpr of
     _                 -> False
 isExprBody _ = False
 
-getMacroExpr :: forall e ctx. Nat.SNatI ctx => Either e Macro -> Maybe (Expr ctx Ps)
-getMacroExpr (Right (Macro @ctx1 _ _ macroParams macroExpr)) =
+getMacroExpr ::
+     forall e ctx ann. Nat.SNatI ctx
+  => Either e (Macro ann)
+  -> Maybe (Expr ctx (Ps ann))
+getMacroExpr (Right (Macro @_ @ctx1 _ _ macroParams macroExpr)) =
     Vec.withDict macroParams $
       case Nat.eqNat @ctx @ctx1 of
         Just Refl -> Just macroExpr
@@ -89,11 +93,11 @@ getMacroExpr _ =
     Nothing
 
 -- | Extract the expression body from an object-like (0-arg) macro.
-getObjExpr :: forall e. Either e Macro -> Maybe (Expr Z Ps)
+getObjExpr :: forall e ann. Either e (Macro ann) -> Maybe (Expr Z (Ps ann))
 getObjExpr = getMacroExpr
 
 -- | Extract the expression body from a function-like macro with one parameter.
-getFn1Expr :: forall e. Either e Macro -> Maybe (Expr (S Z) Ps)
+getFn1Expr :: forall e ann. Either e (Macro ann) -> Maybe (Expr (S Z) (Ps ann))
 getFn1Expr = getMacroExpr
 
 {-------------------------------------------------------------------------------
@@ -121,11 +125,11 @@ tests_typeBody cStd = [
     , testCase "struct Foo" $
         -- #define FOO struct Foo
         getObjExpr (checkMacro cStd [macroNameTok, kw "struct", ident "Foo"])
-          @?= Just (Term $ Literal (TypeTagged TagStruct "Foo"))
+          @?= Just (mtagged "Foo" TagStruct)
     , testCase "size_t" $
         -- #define FOO size_t (bare identifier; typechecker decides it's a type)
         getObjExpr (checkMacro cStd [macroNameTok, ident "size_t"])
-          @?= Just (Term (Var NoXVar "size_t" []))
+          @?= Just (mvar "size_t")
     , testCase "_Bool" $
         -- #define FOO _Bool
         getObjExpr (checkMacro cStd [macroNameTok, kw "_Bool"])
@@ -133,7 +137,7 @@ tests_typeBody cStd = [
     , testCase "_Bool" $
         -- #define FOO size_t const * const
         getObjExpr (checkMacro cStd [macroNameTok, ident "size_t", kw "const", punc "*", kw "const" ])
-          @?= Just (TyApp Const (TyApp Pointer (TyApp Const (Term (Var NoXVar "size_t" []) ::: VNil) ::: VNil) ::: VNil))
+          @?= Just (TyApp Const (TyApp Pointer (TyApp Const (mvar "size_t" ::: VNil) ::: VNil) ::: VNil))
     ]
 
 {-------------------------------------------------------------------------------
@@ -164,7 +168,7 @@ tests_funcLikeTypeBody cStd = [
             [ macroNameTok, punc "(", ident "T", punc ")"
             , ident "size_t", punc "*"
             ])
-          @?= Just (TyApp Pointer (Term (Var NoXVar "size_t" []) ::: VNil))
+          @?= Just (TyApp Pointer (mvar "size_t" ::: VNil))
     ]
 
 {-------------------------------------------------------------------------------

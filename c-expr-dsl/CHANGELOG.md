@@ -29,6 +29,19 @@
 * `StringLiteral.stringLiteralValue` is now a strict `ByteString` holding the
   UTF-8 execution-encoding bytes (previously `[CharValue]`, then `ByteArray`).
 * Rename `C.Expr.Syntax.Literals` to `C.Expr.Syntax.Literal`.
+* Rename `Name` to `Identifier` (module `C.Expr.Syntax.Identifier`). The new
+  `Name` (module `C.Expr.Syntax.Name`) distinguishes ordinary names
+  (`NameOrdinary`) from tagged-type names (`NameTagged Identifier TagKind`).
+  Tagged types now parse as `Var` nodes rather than `TypeTagged` literals.
+* The `Ps` pass gains an annotation type parameter (`Ps ann`); `XVar (Ps ann)`
+  carries a per-variable annotation. The `Tc` pass fixes its annotation to
+  `Maybe QuantTy`.
+* `tcMacros` no longer takes a typedef set or the `injectType`, `injectValue`,
+  and `injectTaggedType` callbacks. It now takes a single
+  `ann -> Maybe QuantTy` projection mapping each variable's parse annotation to
+  its type (`Nothing` falls back to previously-typechecked macros). Accordingly,
+  `CTypeSource`, `buildTypedefEnv`, and the `MacroTcInjectError` result
+  constructor are removed.
 
 ### New features
 
