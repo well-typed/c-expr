@@ -457,11 +457,6 @@ instance Show ( ClassTyCon n ) where
   Type environment
 -------------------------------------------------------------------------------}
 
--- TODO <https://github.com/well-typed/c-expr/issues/7>
---
--- Use @'Maybe' 'FunValue'@ and emit typecheck error when value required but
--- unavailable.
-
 type QuantTy = Quant (FunValue, Type Ty)
 -- | The typing environment: every in-scope typechecked macro mapped to its
 --   quantified type.
