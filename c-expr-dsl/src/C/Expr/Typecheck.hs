@@ -74,7 +74,7 @@ tcMacros typeOfAnn macros =
 -- | The macro is a C type expression (e.g., @#define FOO int@).
 data TypecheckedMacroTypeExpr ann = TypecheckedMacroTypeExpr{
       macroTypeBody :: T.Expr ann
-    , macroTypeType :: Quant (FunValue, Type Ty)
+    , macroTypeType :: QuantTy
     }
   deriving stock (Eq, Show, Generic, Functor, Foldable, Traversable)
 
@@ -82,10 +82,7 @@ data TypecheckedMacroTypeExpr ann = TypecheckedMacroTypeExpr{
 data TypecheckedMacroValueExpr ann = forall ctx. TypecheckedMacroValueExpr{
       macroValueParams :: Vec ctx Identifier
     , macroValueBody   :: V.Expr ctx ann
-      -- TODO <https://github.com/well-typed/c-expr/issues/8>
-      --
-      -- We should not require 'FunValue's for value-like expressions.
-    , macroValueType   :: Quant (FunValue, Type Ty)
+    , macroValueType   :: QuantTy
     }
 instance Eq ann => Eq (TypecheckedMacroValueExpr ann) where
   (TypecheckedMacroValueExpr @_ @c1 p1 b1 t1) == (TypecheckedMacroValueExpr @_ @c2 p2 b2 t2) =
