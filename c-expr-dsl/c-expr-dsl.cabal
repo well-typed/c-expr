@@ -7,7 +7,10 @@ author:          Well-Typed LLP
 maintainer:      info@well-typed.com
 category:        System
 build-type:      Simple
-extra-doc-files: CHANGELOG.md
+extra-doc-files:
+  CHANGELOG.md
+  README.md
+
 synopsis:        DSL for the language support by c-expr-runtime
 tested-with:
   GHC ==9.2.8
@@ -18,8 +21,25 @@ tested-with:
    || ==9.12.2
    || ==9.14.1
 
+description:
+  This library provides the front end for the c-expr DSL: a Parsec-based parser
+  that turns libclang macro tokens into a syntax tree, and a typechecker that
+  assigns types to macro expressions according to the rules implemented in
+  c-expr-runtime.
+
 data-files:      *.golden
 data-dir:        test/fixtures
+
+source-repository head
+  type:     git
+  location: https://github.com/well-typed/c-expr.git
+  subdir:   c-expr-dsl
+
+source-repository this
+  type:     git
+  location: https://github.com/well-typed/c-expr.git
+  subdir:   c-expr-dsl
+  tag:      release-0.1.0.0
 
 common lang
   build-depends:      base >=4.16 && <4.23
@@ -74,7 +94,7 @@ library
     C.Expr.Util.TestEquality
 
   -- internal dependencies
-  build-depends:   c-expr-runtime
+  build-depends:   c-expr-runtime >=0.1.0.0 && <0.2
 
   -- external dependencies
   build-depends:

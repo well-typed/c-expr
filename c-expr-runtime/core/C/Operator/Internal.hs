@@ -14,14 +14,14 @@ import C.Type
 
 --------------------------------------------------------------------------------
 
--- | **Internal implementation detail**
+-- | __Internal implementation detail__
 --
 -- How is a C operator, when instantiated at a particular type, implemented?
 type OpImpl :: Nat -> Hs.Type
 data OpImpl n
   -- | Convert arguments with the given conversions and then apply
-  -- the implied function (e.g. addition for the 'Add' class)
-  -- at the resulting type.
+  -- the implied function (e.g. addition for the 'C.Operator.Classes.Add'
+  -- class) at the resulting type.
   = ConvertThenOp
   { argumentConversions :: !( Vec n [ Conversion ] ) }
   -- | Add an integral value and a pointer.

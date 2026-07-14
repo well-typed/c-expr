@@ -7,8 +7,7 @@
 -- 'CharLiteral' / 'StringLiteral' is inspected.
 --
 -- The aim is to cover every kind of character and string literal we accept (and
--- to pin down those we reject), independently of the @hs-bindgen@ integration
--- tests in @macro_strings.h@.
+-- to pin down those we reject).
 --
 -- References:
 --

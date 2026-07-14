@@ -7,7 +7,10 @@ author:          Well-Typed LLP
 maintainer:      info@well-typed.com
 category:        System
 build-type:      Simple
-extra-doc-files: CHANGELOG.md
+extra-doc-files:
+  CHANGELOG.md
+  README.md
+
 synopsis:        Haskell DSL for simple C arithmetic expressions
 tested-with:
   GHC ==9.2.8
@@ -39,6 +42,17 @@ description:
   floating-point number, in which case the integer will first get converted to
   the floating-point format before performing the addition.
 
+source-repository head
+  type:     git
+  location: https://github.com/well-typed/c-expr.git
+  subdir:   c-expr-runtime
+
+source-repository this
+  type:     git
+  location: https://github.com/well-typed/c-expr.git
+  subdir:   c-expr-runtime
+  tag:      release-0.1.0.0
+
 common common
   ghc-options:
     -Wall -Wunused-packages -Wno-unticked-promoted-constructors
@@ -66,9 +80,10 @@ common common
 
 -- C arithmetic DSL
 --
--- Note: the C.Operator.Classes should not be publicly visible.
--- We should only be able to import the definitions "polluted"
--- by instances declarations (from C.Expr.HostPlatform).
+-- Note: C.Operator.Classes is exposed only so its associated type families
+-- (e.g. AddRes) are usable in signatures. Its classes have no instances of
+-- their own; import C.Expr.HostPlatform (or a Posix32/Posix64/Win64 variant)
+-- to get a platform's instances.
 library
   import:          common
   hs-source-dirs:  core lib

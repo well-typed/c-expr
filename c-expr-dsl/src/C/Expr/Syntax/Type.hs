@@ -3,8 +3,8 @@
 -- This covers the minimum amount of C type syntax needed for @hs-bindgen@:
 -- primitive types with sign/size specifiers and references to named types
 -- (typedefs / other macro types). Const qualifiers and pointer indirection
--- are represented as 'TyApp' nodes in the expression tree using 'Const'
--- and 'Pointer'.
+-- are represented as 'C.Expr.Syntax.Expr.TyApp' nodes in the expression tree
+-- using 'C.Expr.Syntax.Expr.Const' and 'C.Expr.Syntax.Expr.Pointer'.
 module C.Expr.Syntax.Type (
     TypeLit(..)
   , Sign(..)
@@ -21,18 +21,17 @@ import GHC.Generics
 -- | A C type literal as it appears in a macro definition body.
 --
 -- This is the base type, without const qualifiers or pointer indirections.
--- Those are represented by 'TyApp' nodes wrapping this term in the
--- expression tree.
+-- Those are represented by 'C.Expr.Syntax.Expr.TyApp' nodes wrapping this
+-- term in the expression tree.
 --
 -- Examples:
 --
 -- > int           => TypeInt Nothing (Just SizeInt)
 -- > unsigned long => TypeInt (Just Unsigned) (Just SizeLong)
--- > struct Foo    => TypeTagged TagStruct "Foo"
 --
--- Named types (typedefs, type macros) are not represented here; a bare
--- identifier is parsed as 'Var' in the expression layer and the
--- typechecker decides whether it denotes a type or a value.
+-- Named types (typedefs, type macros) and tagged types (@struct@\/@union@\/@enum@)
+-- are not represented here; both parse as 'C.Expr.Syntax.Expr.Var' nodes in
+-- the expression layer, and the typechecker decides what they denote.
 data TypeLit =
     -- | An integral type: @[signed|unsigned] [short|int|long|long long]@
     --
