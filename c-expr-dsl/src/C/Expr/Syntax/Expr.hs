@@ -52,7 +52,7 @@ data Expr ctx p
   --
   -- We don't need an extension point here, because we do not need to evaluate
   -- type functions in Haskell. 'XApp' may be unnecessary if we can remove
-  -- 'FunValue'.
+  -- 'C.Expr.Typecheck.Type.FunValue'.
   | forall n. TyApp             ( TyQual ( S n ) ) ( Vec ( S n ) ( Expr ctx p ) )
   -- | Exactly saturated non-nullary function application.
   | forall n. VaApp !( XApp p ) ( VaFun ( S n ) ) ( Vec ( S n ) ( Expr ctx p ) )
@@ -225,7 +225,7 @@ data Term ctx p =
 
     -- | Reference to a function parameter
     --
-    -- A parameter De Bruijn index and name of the enclosing function-like
+    -- The De Bruijn index of a parameter of the enclosing function-like
     -- macro. For example, the second @X@ in @#define F(X) X + 1@, with index 0.
     --
     -- The language defined in @c-expr-dsl@ is a first-order language, so there

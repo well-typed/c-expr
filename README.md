@@ -16,8 +16,13 @@ semantics.
 This project `c-expr` is the main macro language used by [`hs-bindgen`][], but
 can be used independently.
 
+`c-expr-dsl` requires an [LLVM/Clang][] installation, as it parses macros via
+[`libclang`][LLVM/Clang]; see [`libclang-bindings`][] for setup details.
+
 [Haskell]: https://www.haskell.org/
 [`hs-bindgen`]: https://github.com/well-typed/hs-bindgen
+[LLVM/Clang]: https://github.com/llvm/llvm-project
+[`libclang-bindings`]: https://github.com/well-typed/libclang-bindings/blob/main/manual/README.md
 
 ## Packages in this repository
 
@@ -49,7 +54,6 @@ Vries, and Schrempf (2025) Automatic C Bindings Generation for Haskell
   generated via Template Haskell.
 
 [Parsec]: https://hackage.haskell.org/package/parsec
-[LLVM/CLang]: https://clang.llvm.org/
 
 ## Contribution
 
@@ -57,3 +61,6 @@ Our thanks go to those who have contributed to this project with development,
 bug reports, feature requests, blog posts, etc.  We list
 [contributors](https://github.com/well-typed/hs-bindgen#contributors)
 in the `hs-bindgen` README.
+
+Please see [`CONTRIBUTING.md`](CONTRIBUTING.md) for information about
+contributing to this project.

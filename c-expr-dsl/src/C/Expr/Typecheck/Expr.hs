@@ -913,8 +913,8 @@ inferTyFun fun = case fun of
     -- Const qualifier: MacroType -> MacroType
     Const   -> mkFunTy [MacroTypeTy] MacroTypeTy
 
--- | Infer the type of a 'VFun', together with a 'FunValue' used to
--- evaluate this function.
+-- | Infer the type of a 'VaFun', together with a 'C.Expr.Typecheck.Type.FunValue'
+-- used to evaluate this function.
 inferVaFun :: VaFun arity -> Quant ( FunValue, Type Ty )
 inferVaFun fun = case fun of
 
@@ -1060,8 +1060,6 @@ newtype TyConTag ki = TyConTag Int
   deriving stock ( Eq, Ord, Show )
 
 -- | The type constructor tag of a 'C.Expr.Typecheck.Type.DataTyCon'.
---
---See Note [Class instances and DataTyConTag].
 type DataTyConTag  = TyConTag Ty
 -- | The type constructor tag of a 'C.Expr.Typecheck.Type.ClassTyCon'.
 type ClassTyConTag = TyConTag Ct
@@ -1250,8 +1248,6 @@ classInstancesWithDefaults cls =
           }
 
 -- | Get the 'DataTyConTag' associated with a type constructor.
---
--- See Note [Class instances and DataTyConTag].
 dataTyConTag :: DataTyCon args -> DataTyConTag
 dataTyConTag tc = TyConTag $ I# ( dataToTag# tc )
 

@@ -148,9 +148,11 @@ noWhitespace prevRange = lookAhead $ do
 --   pointer_layers ::= ('*' const?)+
 -- @
 --
--- Returns an 'Expr Ps' where:
+-- Returns an @'Expr' ctx ('Ps' ())@ where:
 --
--- * A keyword or tagged base type becomes @'Term' ('Type' literal)@.
+-- * A keyword base type becomes @'Term' ('Literal' ('TypeLit' …))@.
+-- * A tagged base type (e.g. @struct Foo@) becomes @'Term' ('Var' …)@ with a
+--   'NameTagged' name; the typechecker resolves it.
 -- * A bare identifier that is a local macro parameter becomes @'Term' ('LocalParam' …)@.
 -- * A bare identifier that is a free variable becomes @'Term' ('Var' …)@;
 --   the typechecker decides whether it names a type or a value.
@@ -178,7 +180,8 @@ parseMacroType cStd macroParams = do
 --
 -- Returns:
 --
--- * @'Term' ('Literal' …)@ for keyword or elaborated base types.
+-- * @'Term' ('Literal' ('TypeLit' …))@ for keyword base types.
+-- * @'Term' ('Var' …)@ with a 'NameTagged' name for a tagged base type (e.g. @struct Foo@).
 -- * @'Term' ('LocalParam' …)@ for a bare identifier that is a local macro parameter.
 -- * @'Term' ('Var' …)@ for any other bare identifier; the typechecker decides
 --   whether it names a type or a value.
