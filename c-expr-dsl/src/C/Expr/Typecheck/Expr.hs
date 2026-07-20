@@ -339,8 +339,9 @@ data TcGblEnv s
       , tcPlatform :: !Runtime.Platform
       }
 
--- TODO: implement source span to improve error reporting
--- of macro typechecker errors.
+-- TODO <https://github.com/well-typed/c-expr/issues/23>
+--
+-- Implement source span to improve error reporting of macro typechecker errors.
 data SrcSpan = SrcSpan
   deriving stock ( Eq, Ord, Generic )
 instance Show SrcSpan where
@@ -1199,14 +1200,20 @@ classInstancesWithDefaults cls =
       RelOrdTyCon     -> [ii2, ff2, if2, fi2, str2]
       PlusTyCon       -> [i1, f1]
       MinusTyCon      -> [i1, f1]
-      AddTyCon        -> [ii2, ff2, if2, fi2] -- TODO (?): ptr + int
-      SubTyCon        -> [ii2, ff2, if2, fi2] -- TODO (?): ptr - ptr
+      -- TODO <https://github.com/well-typed/c-expr/issues/24>
+      --
+      -- Support pointer arithmetic.
+      AddTyCon        -> [ii2, ff2, if2, fi2]
+      SubTyCon        -> [ii2, ff2, if2, fi2]
       MultTyCon       -> [ii2, ff2, if2, fi2]
       DivTyCon        -> [ii2, ff2, if2, fi2]
       RemTyCon        -> [ii2]
       ComplementTyCon -> [i1]
       BitwiseTyCon    -> [ii2]
-      ShiftTyCon      -> [ii2] -- TODO: default two arguments separately
+      -- TODO <https://github.com/well-typed/c-expr/issues/25>
+      --
+      -- Improve defaulting of shift operands.
+      ShiftTyCon      -> [ii2]
   where
 
     primIntTy    = PrimIntInfoTy $ CIntegralType $ Runtime.IntLike $ Runtime.Int Runtime.Signed
@@ -1608,11 +1615,12 @@ solveDictCt doDefault ctOrig cls instEnv args = do
                         , "subst: " ++ show matchSubst
                         ]
                     return $ Just ( newCts, matchSubst )
+                  -- TODO <https://github.com/well-typed/c-expr/issues/26>
+                  --
+                  -- Instead of picking the first one, we should accumulate all
+                  -- candidate defaulting substitutions for all constraints and
+                  -- try to find a consistent set of defaulting assignments.
                   dfltSubst1 : _ -> do
-                    -- TODO: instead of picking the first one,
-                    -- we should accumulate all candidate defaulting substitutions
-                    -- for all constraints and try to find a consistent set
-                    -- of defaulting assignments (#940).
                     debugTraceM $
                       unlines
                         [ "solveDictCt: matchOne SUCCESS (defaulting)"

@@ -1,15 +1,5 @@
 # Revision history for `c-expr-dsl`
 
-## ?.?.? -- YYYY-mm-dd
-
-### Breaking changes
-
-### New features
-
-### Minor changes
-
-### Bug fixes
-
 ## 0.1.0.0 -- 2026-07-14
 
 ### Breaking changes
@@ -85,4 +75,4 @@
 
 ## 0.1.0-alpha -- 2026-02-06
 
-* First version. Released on an unsuspecting world.
+* Release candidate.

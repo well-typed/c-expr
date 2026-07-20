@@ -35,9 +35,9 @@
     * [ ] Set the version number
     * [ ] Set the release date (UTC)
 
-* [ ] Prepare release notes
+* [ ] Ensure `cabal check` is green
 
-## GitHub
+## Git
 
 * [ ] Ensure the changes above land on `main`
 
@@ -53,18 +53,14 @@
     $ git push origin "${TAG}"
     ```
 
-* [ ] [Create a new GitHub release](https://github.com/well-typed/c-expr/releases/new)
-    * [ ] Select tag
-    * [ ] Target: `main`
-    * [ ] Release title: `Release ${VERSION}`
-    * [ ] Release notes: (paste release notes, formatted for GitHub Markdown)
-    * [ ] Publish release
-
 ## Hackage
 
 * [ ] Run `cabal check`
 
-TBD
+* [ ] Release to Hackage
+
+* [ ] Manually create documentation with `cabal-install` HEAD (which contains a
+      fix required for Haddocks of re-exports) and upload it
 
 ## Preparation for next release
 
