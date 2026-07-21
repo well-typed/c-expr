@@ -225,8 +225,10 @@ binarySubType _ ptr@( Ptr {} ) ( Arithmetic ( Integral {} ) )
   = Just ( ptr, SubPtrAndIntegral )
 binarySubType _ ( Ptr ty1 ) ( Ptr ty2 )
   | ty1 == ty2
-  -- TODO: do we want to be more lenient in allowing subtraction of pointers
-  -- with different pointee types, e.g. allow @(x :: Ptr Void) - (y :: Ptr Int)@?
+  -- TODO <https://github.com/well-typed/c-expr/issues/31>
+  --
+  -- Do we want to be more lenient in allowing subtraction of pointers with
+  -- different pointee types, e.g. allow @(x :: Ptr Void) - (y :: Ptr Int)@?
   = Just ( Arithmetic $ Integral $ IntLike PtrDiff, SubPtrAndPtr )
 binarySubType _ _ _
   = Nothing
@@ -295,7 +297,9 @@ binaryEqType plat ( Arithmetic a1 ) ( Arithmetic a2 )
   = Just $ mkArithConv2 ( Integral $ IntLike $ Int Signed, snd $ arithmeticConversion plat a1 a2 )
 binaryEqType _ ( Ptr ty1 ) ( Ptr ty2 )
   | ty1 == ty2
-  -- TODO: does the C standard allow "Ptr Int" == "Ptr Void"?
+  -- TODO <https://github.com/well-typed/c-expr/issues/29>
+  --
+  -- The C Standard is more permissive than we are.
   = Just ( intType, ConvertThenOp ( [] ::: [] ::: VNil ) )
 binaryEqType _ _ _ = Nothing
 
@@ -312,8 +316,9 @@ binaryRelType plat ( Arithmetic a1 ) ( Arithmetic a2 )
   = Just $ mkArithConv2 ( Integral $ IntLike $ Int Signed, snd $ arithmeticConversion plat a1 a2 )
 binaryRelType _ ( Ptr ty1 ) ( Ptr ty2 )
   | ty1 == ty2
-  -- TODO: C is a bit more lenient than requiring the inner types to
-  -- match exactly.
+  -- TODO <https://github.com/well-typed/c-expr/issues/30>
+  --
+  -- C is a bit more lenient than requiring the inner types to match exactly.
   = Just ( intType, ConvertThenOp ( [] ::: [] ::: VNil ) )
 binaryRelType _ _ _ = Nothing
 

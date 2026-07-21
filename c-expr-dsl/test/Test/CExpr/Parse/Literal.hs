@@ -221,33 +221,29 @@ tests_charRejected cStd = [
     , failCase cStd "'\\u0001'"
     ]
 
-{-------------------------------------------------------------------------------
-  Characters: digit quirk (KNOWN BUG)
-
-  A character literal whose content looks like a number is currently *not*
-  parsed as a character at all: it is swallowed by the integer-literal parser.
-  Two things conspire:
-
-   * 'C.Expr.Parse.Literal.digitInBase' accepts the single quote @'@ as a C
-     digit separator in *any* position (including leading and trailing),
-     whereas C only permits separators *between* digits.
-   * In 'C.Expr.Parse.Expr' the integer alternative is tried before the
-     character alternative, so a @CXToken_Literal@ spelled @'<digits>'@ is
-     consumed by the integer parser, the surrounding quotes treated as
-     separators.
-
-  As a result @'0'@ yields the integer 0 (not the character whose value is 48),
-  and invalid forms such as @''@, @'12'@ and @'1'2'@ parse successfully instead
-  of being rejected.
-
-  These tests pin the current (incorrect) behaviour so that a future fix is
-  forced to revisit them; the expectations below should then move into
-  'tests_charOrdinary' / 'tests_charRejected'.
-
-  TODO: fix the parser (restrict separator positions and/or try the character
-  parser before the integer parser).
--------------------------------------------------------------------------------}
-
+-- TODO <https://github.com/well-typed/c-expr/issues/28>
+--
+-- Characters: digit quirk (known parser limitation/bug)
+--
+-- A character literal whose content looks like a number is currently *not*
+-- parsed as a character at all: it is swallowed by the integer-literal parser.
+-- Two things conspire:
+--
+--  * 'C.Expr.Parse.Literal.digitInBase' accepts the single quote @'@ as a C
+--    digit separator in *any* position (including leading and trailing),
+--    whereas C only permits separators *between* digits.
+--  * In 'C.Expr.Parse.Expr' the integer alternative is tried before the
+--    character alternative, so a @CXToken_Literal@ spelled @'<digits>'@ is
+--    consumed by the integer parser, the surrounding quotes treated as
+--    separators.
+--
+-- As a result @'0'@ yields the integer 0 (not the character whose value is 48),
+-- and invalid forms such as @''@, @'12'@ and @'1'2'@ parse successfully instead
+-- of being rejected.
+--
+-- These tests pin the current (incorrect) behaviour so that a future fix is
+-- forced to revisit them; the expectations below should then move into
+-- 'tests_charOrdinary' / 'tests_charRejected'.
 tests_charDigitQuirk :: ClangCStandard -> [TestTree]
 tests_charDigitQuirk cStd = [
       -- Should be the character '0' (value 48); currently the integer 0.
