@@ -1,5 +1,11 @@
 # Revision history for `c-expr-dsl`
 
+## 0.1.0.1 -- 2026-07-22
+
+### Bug fixes
+
+* Add a file, which is required by the test suite, to the tarball.
+
 ## 0.1.0.0 -- 2026-07-14
 
 ### Breaking changes
