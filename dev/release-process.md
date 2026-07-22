@@ -66,14 +66,14 @@
 
 * [ ] Update the `CHANGELOG`, adding a new section at top
 
-        ```markdown
-        ## ?.?.?.? -- YYYY-mm-dd
+```markdown
+## ?.?.?.? -- YYYY-mm-dd
 
-        ### Breaking changes
+### Breaking changes
 
-        ### New features
+### New features
 
-        ### Minor changes
+### Minor changes
 
-        ### Bug fixes
-        ```
+### Bug fixes
+```

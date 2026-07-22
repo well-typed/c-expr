@@ -1,6 +1,6 @@
 cabal-version:   3.0
 name:            c-expr-dsl
-version:         0.1.0.0
+version:         0.1.0.1
 license:         BSD-3-Clause
 license-file:    LICENSE
 author:          Well-Typed LLP
@@ -27,7 +27,10 @@ description:
   assigns types to macro expressions according to the rules implemented in
   c-expr-runtime.
 
-data-files:      *.golden
+data-files:
+  *.golden
+  *.h
+
 data-dir:        test/fixtures
 
 source-repository head
@@ -39,7 +42,7 @@ source-repository this
   type:     git
   location: https://github.com/well-typed/c-expr.git
   subdir:   c-expr-dsl
-  tag:      release-0.1.0.0
+  tag:      release-0.1.0.1
 
 common lang
   build-depends:      base >=4.16 && <4.23
