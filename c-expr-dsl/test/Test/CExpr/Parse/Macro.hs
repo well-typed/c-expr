@@ -18,7 +18,7 @@ import Data.Type.Equality ((:~:) (..))
 import Data.Type.Nat qualified as Nat
 import Data.Vec.Lazy (Vec (..))
 import Data.Vec.Lazy qualified as Vec
-import DeBruijn (Idx (..))
+import DeBruijn (Idx (..), pattern I1)
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -28,7 +28,7 @@ import Clang.CStandard
 import Clang.HighLevel.Types
 
 import Test.CExpr.Parse.Infra
-import Test.CExpr.Typecheck.Infra (mtagged, mvar)
+import Test.CExpr.Typecheck.Infra (add, intLit, mtagged, mtuple, mvar)
 
 {-------------------------------------------------------------------------------
   Top-level
@@ -44,6 +44,7 @@ testsWithCStd cStd = testGroup (show cStd) [
       testGroup "type bodies"               $ tests_typeBody         std
     , testGroup "function-like type bodies" $ tests_funcLikeTypeBody std
     , testGroup "expression bodies"         $ tests_exprBody         std
+    , testGroup "comma bodies"              $ tests_commaBody        std
     , testGroup "disambiguation"            $ tests_disambiguation   std
     ]
   where
@@ -99,6 +100,10 @@ getObjExpr = getMacroExpr
 -- | Extract the expression body from a function-like macro with one parameter.
 getFn1Expr :: forall e ann. Either e (Macro ann) -> Maybe (Expr (S Z) (Ps ann))
 getFn1Expr = getMacroExpr
+
+-- | Extract the expression body from a function-like macro with two parameters.
+getFn2Expr :: forall e ann. Either e (Macro ann) -> Maybe (Expr (S (S Z)) (Ps ann))
+getFn2Expr = getMacroExpr
 
 {-------------------------------------------------------------------------------
   Type bodies
@@ -213,6 +218,60 @@ tests_exprBody cStd = [
       -- Zero-argument function-like macro (#define FOO() 0) is
       -- parsed as objectLike since empty parens are not valid formalArgs;
       -- the result is still an expression body
+    ]
+
+{-------------------------------------------------------------------------------
+  Comma bodies
+
+  A comma in a macro body denotes a tuple, not the C comma operator; see
+  <https://github.com/well-typed/hs-bindgen/issues/2182>.
+-------------------------------------------------------------------------------}
+
+tests_commaBody :: ClangCStandard -> [TestTree]
+tests_commaBody cStd = [
+      testCase "(1, 2)" $
+        -- #define FOO (1, 2)
+        getObjExpr (checkMacro cStd
+            [ macroNameTok
+            , punc "(", lit "1", punc ",", lit "2", punc ")"
+            ])
+          @?= Just (mtuple (intLit 1 ::: intLit 2 ::: VNil))
+    , testCase "1, 2 (without parentheses)" $
+        -- #define FOO 1, 2
+        getObjExpr (checkMacro cStd
+            [macroNameTok, lit "1", punc ",", lit "2"])
+          @?= Just (mtuple (intLit 1 ::: intLit 2 ::: VNil))
+    , testCase "(1, 2, 3)" $
+        -- #define FOO (1, 2, 3)
+        getObjExpr (checkMacro cStd
+            [ macroNameTok
+            , punc "(", lit "1", punc ",", lit "2", punc ",", lit "3", punc ")"
+            ])
+          @?= Just (mtuple (intLit 1 ::: intLit 2 ::: intLit 3 ::: VNil))
+    , testCase "components are full expressions" $
+        -- #define FOO (1 + 2, 3)
+        getObjExpr (checkMacro cStd
+            [ macroNameTok
+            , punc "(", lit "1", punc "+", lit "2", punc ",", lit "3", punc ")"
+            ])
+          @?= Just (mtuple (add (intLit 1) (intLit 2) ::: intLit 3 ::: VNil))
+    , testCase "FOO(x, y) = (x, y)" $
+        -- #define FOO(x, y) (x, y)
+        getFn2Expr (checkMacro cStd
+            [ macroNameTok
+            , punc "(", ident "x", punc ",", ident "y", punc ")"
+            , punc "(", ident "x", punc ",", ident "y", punc ")"
+            ])
+          @?= Just (mtuple (Term (LocalParam I1) ::: Term (LocalParam IZ) ::: VNil))
+    , testCase "FOO(x, y) = ((x), (y))" $
+        -- #define FOO(x, y) ((x), (y))
+        getFn2Expr (checkMacro cStd
+            [ macroNameTok
+            , punc "(", ident "x", punc ",", ident "y", punc ")"
+            , punc "(", punc "(", ident "x", punc ")", punc ","
+            ,           punc "(", ident "y", punc ")", punc ")"
+            ])
+          @?= Just (mtuple (Term (LocalParam I1) ::: Term (LocalParam IZ) ::: VNil))
     ]
 
 {-------------------------------------------------------------------------------

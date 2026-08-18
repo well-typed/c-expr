@@ -139,6 +139,25 @@
 #define EXPR_COMPOUND (1 + 2) * 3
 
 // ---------------------------------------------------------------------------
+// Expression macros: comma
+//
+// A comma in a macro body denotes a tuple, not the C comma operator.
+//
+// C assigns no meaning to macro bodies, so we are free to pick the most useful
+// interpretation. Tuples support the argument-list idiom (`#define ARGS 1, 2`
+// used as `f(ARGS)`).
+//
+// The comma operator resembles side effects, which we cannot express in Haskell
+// in a meaningful way anyways.
+//
+// See <https://github.com/well-typed/hs-bindgen/issues/2182>.
+// ---------------------------------------------------------------------------
+
+#define EXPR_TUPLE (1, 2)
+#define EXPR_TUPLE_NO_PARENS 1, 2
+#define EXPR_TUPLE_THREE (1, 2, 3)
+
+// ---------------------------------------------------------------------------
 // Function-like macros
 // ---------------------------------------------------------------------------
 
@@ -146,6 +165,9 @@
 #define FUNC_ADD(a, b) a + b
 #define FUNC_NEG(x) (-x)
 #define FUNC_MULTIPLE_LOCAL_PARAMS(a, b, c, d) a + (b - (c + d))
+// Comma is a tuple here, too (see EXPR_TUPLE above)
+#define FUNC_TUPLE(x, y) (x, y)
+#define FUNC_TUPLE_THREE(x, y, z) ((x), (y), (z))
 // TODO <https://github.com/well-typed/c-expr/issues/1>
 //
 // Ternary operator is not yet in the expression grammar (see below).
