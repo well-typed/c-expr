@@ -9,6 +9,7 @@ module Test.CExpr.Typecheck.Infra (
     -- * Assertion helpers
   , assertTypeMacro
   , assertValueMacro
+  , assertTupleMacro
     -- * Expression helpers
   , tyLit
   , constOf
@@ -19,20 +20,26 @@ module Test.CExpr.Typecheck.Infra (
   , mlocal
   , mvar
   , mtagged
+  , mtuple
   ) where
 
 import Data.Functor.Identity (Identity (runIdentity))
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Nat (Nat (..))
+import Data.Type.Nat (SNatI)
+import Data.Type.Nat qualified as Nat
 import Data.Vec.Lazy (Vec (..))
 import DeBruijn (Idx (..))
+import Numeric.Natural (Natural)
 import Test.Tasty.HUnit
 
 import C.Type qualified as Runtime
 
 import C.Expr.Syntax
 import C.Expr.Typecheck
+import C.Expr.Typecheck.Type (Kind (Ty), QuantTyBody (..), Type (..),
+                              mkQuantTyBody, pattern Tuple)
 import C.Expr.Util.Panic
 
 import Test.CExpr.Util
@@ -84,6 +91,27 @@ assertValueMacro :: (Show a) => MacroTcResult a -> Assertion
 assertValueMacro r =
     assertBool ("expected MacroTcValueExpr, got: " ++ show r) (isValueMacro r)
 
+-- | Assert that the macro is a value macro whose result type is a tuple of the
+-- given arity.
+assertTupleMacro :: (Show a) => Natural -> MacroTcResult a -> Assertion
+assertTupleMacro arity r =
+    case r of
+      MacroTcValueExpr TypecheckedMacroValueExpr{macroValueType}
+        | Tuple n _ <- resultTy (snd (quantTyBody (mkQuantTyBody macroValueType)))
+        , Nat.snatToNatural n == arity
+        -> pure ()
+      _otherwise
+        -> assertFailure $
+             "expected a value macro of tuple type with arity "
+               ++ show arity ++ ", got: " ++ show r
+  where
+    -- Drop the parameters of a function-like macro; we are only interested in
+    -- what its body evaluates to.
+    resultTy :: Type Ty -> Type Ty
+    resultTy = \case
+      FunTy _params res -> res
+      ty                -> ty
+
 tyLit :: TypeLit -> Expr ctx (Ps ())
 tyLit = Term . Literal . TypeLit
 
@@ -116,6 +144,10 @@ mvar n = Term $ Var (XVarPs ()) (NameOrdinary n) []
 
 mtagged :: Identifier -> TagKind -> Expr ctx (Ps ())
 mtagged n t = Term $ Var (XVarPs ()) (NameTagged n t) []
+
+-- | A comma expression: at least two components, interpreted as a tuple.
+mtuple :: SNatI n => Vec (S (S n)) (Expr ctx (Ps ())) -> Expr ctx (Ps ())
+mtuple = VaApp NoXApp MTuple
 
 {-------------------------------------------------------------------------------
   Auxiliary

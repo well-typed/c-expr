@@ -20,6 +20,7 @@ tests = testGroup "classify" [
     , tests_typeApp
     , tests_intLiterals
     , tests_arithmetic
+    , tests_commas
     , tests_functionLike
     , tests_typeEnvChain
     , tests_errors
@@ -79,7 +80,36 @@ tests_arithmetic = testGroup "arithmetic expression bodies" [
     ]
 
 {-------------------------------------------------------------------------------
-  Group 5: function-like macro bodies (with formal parameters)
+  Group 5: comma expression bodies
+
+  A comma in a macro body denotes a tuple, not the C comma operator; see
+  <https://github.com/well-typed/hs-bindgen/issues/2182>.
+-------------------------------------------------------------------------------}
+
+tests_commas :: TestTree
+tests_commas = testGroup "comma expression bodies" [
+      testCase "1, 2" $
+        assertTupleMacro 2 $
+          classifyOne "M" VNil (mtuple (intLit 1 ::: intLit 2 ::: VNil))
+    , testCase "1, 2, 3" $
+        assertTupleMacro 3 $
+          classifyOne "M" VNil
+            (mtuple (intLit 1 ::: intLit 2 ::: intLit 3 ::: VNil))
+    , testCase "mixed: 1 + 2, 3" $
+        assertTupleMacro 2 $
+          classifyOne "M" VNil
+            (mtuple (add (intLit 1) (intLit 2) ::: intLit 3 ::: VNil))
+    , testCase "TUPLE(x, y) = x, y" $
+        -- The components are independently polymorphic: the macro's type is
+        -- @forall a b. a -> b -> (a, b)@, not @b@ as the comma operator would
+        -- give.
+        assertTupleMacro 2 $
+          classifyOne "TUPLE" ("x" ::: "y" ::: VNil)
+            (mtuple (mlocal I1 ::: mlocal IZ ::: VNil))
+    ]
+
+{-------------------------------------------------------------------------------
+  Group 6: function-like macro bodies (with formal parameters)
 -------------------------------------------------------------------------------}
 
 tests_functionLike :: TestTree
@@ -93,7 +123,7 @@ tests_functionLike = testGroup "function-like macro bodies" [
     ]
 
 {-------------------------------------------------------------------------------
-  Group 6: TypeEnv chain — value macro references
+  Group 7: TypeEnv chain — value macro references
 -------------------------------------------------------------------------------}
 
 tests_typeEnvChain :: TestTree
@@ -115,7 +145,7 @@ tests_typeEnvChain = testGroup "TypeEnv chain (value macro references)" [
     ]
 
 {-------------------------------------------------------------------------------
-  Group 7: error cases
+  Group 8: error cases
 -------------------------------------------------------------------------------}
 
 tests_errors :: TestTree
