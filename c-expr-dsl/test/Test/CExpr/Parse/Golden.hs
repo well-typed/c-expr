@@ -27,7 +27,7 @@ import Clang.Enum.Simple
 import Clang.HighLevel qualified as HighLevel
 import Clang.HighLevel.Types
 import Clang.LowLevel.Core
-import Clang.Paths
+import Clang.Paths (getRealPathText)
 import Clang.Version
 
 import Paths_c_expr_dsl (getDataDir)
@@ -96,7 +96,7 @@ parseMacrosFixture testCStd fixturePath = do
     -- A split failure is reported separately from a parse failure: the splitter
     -- is test-local, so a regression in it must not masquerade as a parser
     -- result.
-    formatEntry :: (Text, [Token TokenSpelling]) -> String
+    formatEntry :: (Text, [Token SourcePath TokenSpelling]) -> String
     formatEntry (name, tokens) =
         Text.unpack name ++ ": " ++
           case splitMacro tokens of
@@ -122,8 +122,8 @@ parseMacrosFixture testCStd fixturePath = do
 -- is not one we can represent: a name that is neither an identifier nor a
 -- keyword, a malformed parameter list, or a variadic macro.
 splitMacro ::
-     [Token TokenSpelling]
-  -> Maybe ([Identifier], [Token TokenSpelling])
+     [Token SourcePath TokenSpelling]
+  -> Maybe ([Identifier], [Token SourcePath TokenSpelling])
 splitMacro []            = Nothing
 splitMacro (name:tokens)
     | not (isMacroName name) = Nothing
@@ -136,15 +136,15 @@ splitMacro (name:tokens)
           _otherwise                                  -> Just ([], tokens)
   where
     paramList ::
-         [Token TokenSpelling]
-      -> Maybe ([Identifier], [Token TokenSpelling])
+         [Token SourcePath TokenSpelling]
+      -> Maybe ([Identifier], [Token SourcePath TokenSpelling])
     paramList (t:ts) | isPunctuation ")" t = Just ([], ts)
     paramList ts                           = go [] ts
 
     go ::
          [Identifier]
-      -> [Token TokenSpelling]
-      -> Maybe ([Identifier], [Token TokenSpelling])
+      -> [Token SourcePath TokenSpelling]
+      -> Maybe ([Identifier], [Token SourcePath TokenSpelling])
     go acc (t:u:us)
       | Just param <- macroParam t
       = if | isPunctuation "," u -> go (param:acc) us
@@ -154,7 +154,7 @@ splitMacro (name:tokens)
       = Nothing
 
 -- | Macro names may be keywords (@#define bool int@ is valid C)
-isMacroName :: Token TokenSpelling -> Bool
+isMacroName :: Token SourcePath TokenSpelling -> Bool
 isMacroName t = case fromSimpleEnum (tokenKind t) of
     Right CXToken_Identifier -> True
     Right CXToken_Keyword    -> True
@@ -164,7 +164,7 @@ isMacroName t = case fromSimpleEnum (tokenKind t) of
 --
 -- Which spellings @libclang@ classifies as 'CXToken_Keyword' depends on the C
 -- standard in force, so the kind must not decide what counts as a parameter.
-macroParam :: Token TokenSpelling -> Maybe Identifier
+macroParam :: Token SourcePath TokenSpelling -> Maybe Identifier
 macroParam t = case fromSimpleEnum (tokenKind t) of
     Right CXToken_Identifier -> Just name
     Right CXToken_Keyword    -> Just name
@@ -172,15 +172,15 @@ macroParam t = case fromSimpleEnum (tokenKind t) of
   where
     name = Identifier (getTokenSpelling (tokenSpelling t))
 
-isPunctuation :: String -> Token TokenSpelling -> Bool
+isPunctuation :: String -> Token SourcePath TokenSpelling -> Bool
 isPunctuation expected t =
        fromSimpleEnum (tokenKind t) == Right CXToken_Punctuation
     && removeMultilines (Text.unpack (getTokenSpelling (tokenSpelling t))) == expected
 
 -- | Are the two tokens adjacent in the source, with no whitespace in between?
 adjacent ::
-     Token TokenSpelling
-  -> Token TokenSpelling
+     Token SourcePath TokenSpelling
+  -> Token SourcePath TokenSpelling
   -> Bool
 adjacent prev next =
        singleLocPath   end == singleLocPath   start
@@ -205,7 +205,7 @@ removeMultilines = \case
 collectMacroTokens ::
      TestCStandard
   -> FilePath
-  -> IO [(Text, [Token TokenSpelling])]
+  -> IO [(Text, [Token SourcePath TokenSpelling])]
 collectMacroTokens testCStd path =
     HighLevel.withIndex DontDisplayDiagnostics $ \index ->
       HighLevel.withTranslationUnit index src noArgs [] flags $ \unit -> do
@@ -223,7 +223,7 @@ collectMacroTokens testCStd path =
 
 macroFold ::
      CXTranslationUnit
-  -> Fold IO (Text, [Token TokenSpelling])
+  -> Fold IO (Text, [Token SourcePath TokenSpelling])
 macroFold unit = simpleFold $ \cursor -> do
     loc    <- clang_getCursorLocation cursor
     inMain <- clang_Location_isFromMainFile loc
@@ -235,7 +235,7 @@ macroFold unit = simpleFold $ \cursor -> do
           Right CXCursor_MacroDefinition -> do
               name   <- clang_getCursorSpelling cursor
               range  <- HighLevel.clang_getCursorExtent cursor
-              tokens <- HighLevel.clang_tokenize unit (multiLocExpansion <$> range)
+              tokens <- HighLevel.clang_tokenize unit getRealPathText (multiLocExpansion <$> range)
               foldContinueWith (name, tokens)
           _ ->
               foldContinue

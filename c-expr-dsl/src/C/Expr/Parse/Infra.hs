@@ -29,19 +29,19 @@ import Text.Parsec.Pos
 import Clang.Enum.Simple
 import Clang.HighLevel.Types
 import Clang.LowLevel.Core
-import Clang.Paths
+import Clang.Paths (getSourcePath)
 
 {-------------------------------------------------------------------------------
   Parser type
 -------------------------------------------------------------------------------}
 
-type Parser = Parsec [Token TokenSpelling] ()
+type Parser = Parsec [Token SourcePath TokenSpelling] ()
 
 -- | Run a parser on a stream of tokens
 runParser ::
      FilePath
   -> Parser a
-  -> [Token TokenSpelling]
+  -> [Token SourcePath TokenSpelling]
   -> Either MacroParseError a
 runParser sourcePath p tokens =
     first unrecognized $ Parsec.runParser p () sourcePath tokens
@@ -58,7 +58,7 @@ runParser sourcePath p tokens =
 
 data MacroParseError = MacroParseError {
       parseError       :: String
-    , parseErrorTokens :: [Token TokenSpelling]
+    , parseErrorTokens :: [Token SourcePath TokenSpelling]
     }
   deriving stock (Show, Eq, Generic)
   deriving anyclass (Exception)
@@ -67,10 +67,10 @@ data MacroParseError = MacroParseError {
   Dealing with individual tokens
 -------------------------------------------------------------------------------}
 
-token :: (Token TokenSpelling -> Maybe a) -> Parser a
+token :: (Token SourcePath TokenSpelling -> Maybe a) -> Parser a
 token = Parsec.token tokenPretty tokenSourcePos
   where
-    tokenPretty :: Token TokenSpelling -> String
+    tokenPretty :: Token SourcePath TokenSpelling -> String
     tokenPretty Token{tokenKind, tokenSpelling} = concat [
           show $ Text.unpack (getTokenSpelling tokenSpelling)
         , " ("
@@ -78,14 +78,14 @@ token = Parsec.token tokenPretty tokenSourcePos
         ,  ")"
         ]
 
-    tokenSourcePos :: Token a -> SourcePos
+    tokenSourcePos :: Token SourcePath a -> SourcePos
     tokenSourcePos t =
         newPos
           (getSourcePath $ singleLocPath start)
           (singleLocLine start)
           (singleLocColumn start)
       where
-        start :: SingleLoc
+        start :: SingleLoc SourcePath
         start = rangeStart $ multiLocExpansion <$> tokenExtent t
 
 tokenOfKind :: CXTokenKind -> (Text -> Maybe a) -> Parser a
