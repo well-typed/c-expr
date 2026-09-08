@@ -60,7 +60,7 @@ import Clang.HighLevel.Types
 
 type Macro :: Hs.Type -> Hs.Type
 data Macro ann = forall (ctx :: Ctx). Macro {
-      macroLoc    :: MultiLoc
+      macroLoc    :: MultiLoc SourcePath
     , macroName   :: Identifier
     , macroParams :: Vec ctx Identifier
     , macroExpr   :: Expr ctx (Ps ann)

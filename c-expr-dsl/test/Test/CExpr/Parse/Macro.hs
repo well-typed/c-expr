@@ -55,7 +55,7 @@ testsWithCStd cStd = testGroup (show cStd) [
 -------------------------------------------------------------------------------}
 
 -- | A fixed macro name token used in all tests
-macroNameTok :: Token TokenSpelling
+macroNameTok :: Token SourcePath TokenSpelling
 macroNameTok = ident "FOO"
 
 -- | True when the macro expression looks like a type: it has an 'Type' or

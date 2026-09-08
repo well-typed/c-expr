@@ -41,3 +41,10 @@ if impl(ghc >= 9.14)
   allow-newer: fin-0.3.2:QuickCheck
   allow-newer: skew-list-0.1:QuickCheck
   allow-newer: vec-0.5.1:QuickCheck
+
+-- TEMPORARY: pin to PR #82 until merged to main
+source-repository-package
+   type:     git
+   location: https://github.com/well-typed/libclang-bindings
+   tag:      9bb3b7aeb0a6cd1b216816cb2a050c66036b5968
+   subdir:   libclang-bindings
