@@ -8,7 +8,7 @@ import Clang.HighLevel.Types
 -- | A synthetic source location used to satisfy constructors that carry a
 -- 'MultiLoc' (notably 'C.Expr.Syntax.Macro' and 'Token') in tests where the
 -- actual location is irrelevant.
-fakeLoc :: MultiLoc
+fakeLoc :: MultiLoc SourcePath
 fakeLoc = MultiLoc{
       multiLocExpansion = SingleLoc{
           singleLocPath   = "<test>"
