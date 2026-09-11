@@ -46,7 +46,7 @@ parseMacro :: ClangCStandard -> Parser (Macro ())
 parseMacro cStd = do
     (macroLocRange, macroName) <- parseLocIdentifier
     let
-        macroLoc :: MultiLoc
+        macroLoc :: MultiLoc SourcePath
         macroLoc = macroLocRange.rangeStart
 
         functionLike :: Parser (Macro ())
@@ -89,7 +89,7 @@ rejectPragma :: Parser ()
 rejectPragma =
     notFollowedBy (token isPragma) <?> "C expression (not a _Pragma operator)"
   where
-    isPragma :: Token TokenSpelling -> Maybe ()
+    isPragma :: Token SourcePath TokenSpelling -> Maybe ()
     isPragma t
       | getTokenSpelling (tokenSpelling t) == "_Pragma" = Just ()
       | otherwise                                       = Nothing
@@ -113,7 +113,7 @@ lookupParam n (m ::: vec)
 -- #1903: <https://github.com/well-typed/hs-bindgen/issues/1903>
 noWhitespace ::
      -- | Source range for the previous token
-     Range MultiLoc
+     Range (MultiLoc SourcePath)
   -> Parser ()
 noWhitespace prevRange = lookAhead $ do
     tok <- anyToken
@@ -378,7 +378,7 @@ term cStd macroParams =
       , ValueString <$> literalString
       ]
 
-    ops :: OperatorTable [Token TokenSpelling] () Identity (Term ctx (Ps ()))
+    ops :: OperatorTable [Token SourcePath TokenSpelling] () Identity (Term ctx (Ps ()))
     ops = []
 
 

@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+* `Token`, `MultiLoc`, and `SingleLoc` from `libclang-bindings` are now
+  parameterized by a path type. All uses in `c-expr-dsl` apply `SourcePath`,
+  e.g. `Token SourcePath TokenSpelling` where `Token TokenSpelling` appeared
+  before. This follows the upstream `libclang-bindings` change that distinguishes
+  raw clang paths (`SourcePath`) from canonical on-disk paths (`RealPath`).
+
 ### New features
 
 ### Minor changes
