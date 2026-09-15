@@ -1,7 +1,8 @@
 // Fixture for c-expr-dsl golden tests.
 //
-// Each macro is parsed using libclang and then fed to 'parseMacro'. The
-// results are compared against the golden file macros.golden.
+// Each macro is tokenised using libclang, split into its formal parameters and
+// its body, and then fed to 'parseMacroBody'. The results are compared against
+// the golden file macros.golden.
 
 // ---------------------------------------------------------------------------
 // Type macros: void and bool

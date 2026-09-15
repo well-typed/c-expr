@@ -9,6 +9,13 @@
   e.g. `Token SourcePath TokenSpelling` where `Token TokenSpelling` appeared
   before. This follows the upstream `libclang-bindings` change that distinguishes
   raw clang paths (`SourcePath`) from canonical on-disk paths (`RealPath`).
+* `parseMacro` is replaced by `parseMacroBody`, which parses a macro *body*.
+  Splitting a `#define` into its name, formal parameter list and body is now
+  the caller's responsibility. The formal parameters are passed in source
+  order, and references to them in the body become `LocalParam`s.
+  `parseMacroBody` consumes the entire token stream (it ends with `eof`).
+  See [issue #2243][issue-2243].
+* `parseMacroType` likewise takes its formal parameters in source order.
 
 ### New features
 
@@ -20,6 +27,7 @@
   `MacroParseError` instead. An empty macro body (`#define FOO`) is legal C and
   may reach the parser. See [issue #2246][issue-2246].
 
+[issue-2243]: https://github.com/well-typed/hs-bindgen/issues/2243
 [issue-2246]: https://github.com/well-typed/hs-bindgen/issues/2246
 
 ## 0.1.0.1 -- 2026-07-22

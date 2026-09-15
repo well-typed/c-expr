@@ -1,6 +1,4 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
-module C.Expr.Parse.Expr (parseMacro, parseMacroType) where
+module C.Expr.Parse.Expr (parseMacroBody, parseMacroType) where
 
 import Control.Monad
 import Data.Foldable qualified as Foldable
@@ -36,43 +34,28 @@ import Clang.LowLevel.Core
     <https://en.cppreference.com/w/c/language/operator_precedence>
 -------------------------------------------------------------------------------}
 
--- | Parse a macro definition (type or value expression)
+-- | Parse a macro body (type or value expression)
+--
+-- The formal parameters are given in source order, and references to them in
+-- the body become 'LocalParam's.
+--
+-- The entire token stream must be the body: 'parseMacroBody' ends with 'eof'.
 --
 -- Tries to parse the body as a type expression first. A valid type token
 -- sequence always produces @'Term' ('Type' …)@; everything else parses as an
 -- expression. Only when typechecking macros, we can fully discriminate type and
 -- value expressions.
-parseMacro :: ClangCStandard -> Parser (Macro ())
-parseMacro cStd = do
-    (macroLocRange, macroName) <- parseLocIdentifier
-    let
-        macroLoc :: MultiLoc SourcePath
-        macroLoc = macroLocRange.rangeStart
-
-        functionLike :: Parser (Macro ())
-        functionLike = do
-          noWhitespace macroLocRange
-          paramNames <- formalParams
-          Vec.reifyList (reverse paramNames) $ \macroParams -> do
-            macroExpr <- bodyExpr macroParams
-            pure $ Macro macroLoc macroName (Vec.reverse macroParams) macroExpr
-
-        objectLike :: Parser (Macro ())
-        objectLike = do
-          macroExpr <- bodyExpr VNil
-          pure $ Macro macroLoc macroName VNil macroExpr
-    m <- choice [try functionLike, objectLike]
-    eof
-    return m
+parseMacroBody ::
+     forall ctx.
+     ClangCStandard
+  -> Vec ctx Identifier  -- ^ Formal parameters, in source order
+  -> Parser (Expr ctx (Ps ()))
+parseMacroBody cStd params = do
+    rejectPragma
+    try (macroType cStd scope <* eof) <|> (exprTuple cStd scope <* eof)
   where
-    -- Try the body as a type expression first. The @'eof'@ inside the @'try'@
-    -- is essential: if @'parseMacroType'@ succeeds on a prefix (e.g. the bare
-    -- identifier in @size_t + 1@) but leaves tokens unconsumed, the whole
-    -- attempt is abandoned and we fall back to the expression parser.
-    bodyExpr :: Vec ctx Identifier -> Parser (Expr ctx (Ps ()))
-    bodyExpr macroParams = do
-      rejectPragma
-      try (parseMacroType cStd macroParams <* eof) <|> exprTuple cStd macroParams
+    scope :: Scope ctx
+    scope = mkScope params
 
 -- | Reject macro bodies that begin with the @_Pragma@ operator
 --
@@ -94,36 +77,30 @@ rejectPragma =
       | getTokenSpelling (tokenSpelling t) == "_Pragma" = Just ()
       | otherwise                                       = Nothing
 
-formalParams :: Parser [Identifier]
-formalParams = parens $ parseIdentifier `sepBy` comma
+{-------------------------------------------------------------------------------
+  Macro parameters in scope
+-------------------------------------------------------------------------------}
 
-lookupParam :: Identifier -> Vec ctx Identifier -> Maybe (Idx ctx)
-lookupParam _ VNil    = Nothing
-lookupParam n (m ::: vec)
-  | n == m    = Just IZ
-  | otherwise = IS <$> lookupParam n vec
+-- | The formal parameters of a macro, ordered for de Bruijn lookup
+--
+-- The innermost binder comes first, so @FOO(x, y)@ binds @y@ to 'IZ' and @x@ to
+-- @'IS' 'IZ'@. This is the reverse of the source order used wherever the
+-- parameters are visible from the outside ('parseMacroBody', 'macroParams'),
+-- which is why this type exists: the two orders are otherwise indistinguishable.
+newtype Scope ctx = Scope (Vec ctx Identifier)
 
--- | Check that there is no whitespace between the previous token and the current
--- token
---
--- Function-like macros are only function-like if there is /no/ whitespace
--- between the macro name and the opening parenthesis of the parameter list.
---
--- We used to not check whitespace, which was the source of a bug. See issue
--- #1903: <https://github.com/well-typed/hs-bindgen/issues/1903>
-noWhitespace ::
-     -- | Source range for the previous token
-     Range (MultiLoc SourcePath)
-  -> Parser ()
-noWhitespace prevRange = lookAhead $ do
-    tok <- anyToken
-    let prev    = prevRange.rangeEnd.multiLocExpansion
-        current = tok.tokenExtent.rangeStart.multiLocExpansion
-        p       = prev.singleLocPath   == current.singleLocPath &&
-                  prev.singleLocLine   == current.singleLocLine &&
-                  prev.singleLocColumn == current.singleLocColumn
-    unless p $
-      parserFail "unexpected whitespace"
+-- | Build a 'Scope' from the formal parameters in source order
+mkScope :: Vec ctx Identifier -> Scope ctx
+mkScope params = Scope (Vec.reverse params)
+
+lookupParam :: forall ctx. Identifier -> Scope ctx -> Maybe (Idx ctx)
+lookupParam n (Scope params) = go params
+  where
+    go :: forall ctx'. Vec ctx' Identifier -> Maybe (Idx ctx')
+    go VNil = Nothing
+    go (m ::: vec)
+      | n == m    = Just IZ
+      | otherwise = IS <$> go vec
 
 {-------------------------------------------------------------------------------
   Types
@@ -158,10 +135,16 @@ noWhitespace prevRange = lookAhead $ do
 --   the typechecker decides whether it names a type or a value.
 -- * Each @const@ qualifier wraps the expression in @'TyApp' 'Const'@.
 -- * Each @*@ pointer layer wraps the expression in @'TyApp' 'Pointer'@.
-parseMacroType :: ClangCStandard -> Vec ctx Identifier -> Parser (Expr ctx (Ps ()))
-parseMacroType cStd macroParams = do
+parseMacroType ::
+     ClangCStandard
+  -> Vec ctx Identifier  -- ^ Formal parameters, in source order
+  -> Parser (Expr ctx (Ps ()))
+parseMacroType cStd params = macroType cStd (mkScope params)
+
+macroType :: ClangCStandard -> Scope ctx -> Parser (Expr ctx (Ps ()))
+macroType cStd scope = do
     constBefore <- option False (True <$ keyword "const")
-    base        <- typeBase cStd macroParams
+    base        <- typeBase cStd scope
     constAfter  <- option False (True <$ keyword "const")
     ptrs        <- pointerLayers
     -- In C, @const@ is idempotent: @const int const@ is valid but equivalent
@@ -185,8 +168,8 @@ parseMacroType cStd macroParams = do
 -- * @'Term' ('LocalParam' …)@ for a bare identifier that is a local macro parameter.
 -- * @'Term' ('Var' …)@ for any other bare identifier; the typechecker decides
 --   whether it names a type or a value.
-typeBase :: forall ctx. ClangCStandard -> Vec ctx Identifier -> Parser (Expr ctx (Ps ()))
-typeBase cStd macroParams =
+typeBase :: forall ctx. ClangCStandard -> Scope ctx -> Parser (Expr ctx (Ps ()))
+typeBase cStd scope =
     choice [
         -- Type literal.
         Term . Literal . TypeLit <$> typeLiteral cStd
@@ -207,7 +190,7 @@ typeBase cStd macroParams =
     mkTagged (tag, ident) = Var (XVarPs ()) (NameTagged ident tag) []
 
     mkVar :: Identifier -> Term ctx (Ps ())
-    mkVar n = case lookupParam n macroParams of
+    mkVar n = case lookupParam n scope of
       Just i  -> LocalParam i
       Nothing -> Var (XVarPs ()) (NameOrdinary n) []
 
@@ -350,8 +333,8 @@ keyword expected = token $ \t ->
   Simple expressions
 -------------------------------------------------------------------------------}
 
-term :: forall ctx. ClangCStandard -> Vec ctx Identifier -> Parser (Term ctx (Ps ()))
-term cStd macroParams =
+term :: forall ctx. ClangCStandard -> Scope ctx -> Parser (Term ctx (Ps ()))
+term cStd scope =
     buildExpressionParser ops trm <?> "simple expression"
   where
     trm :: Parser (Term ctx (Ps ()))
@@ -363,12 +346,12 @@ term cStd macroParams =
     localParamOrVar :: Parser (Term ctx (Ps ()))
     localParamOrVar = do
       varName <- parseIdentifier
-      case lookupParam varName macroParams of
+      case lookupParam varName scope of
         Just i ->
           pure $ LocalParam i
         Nothing ->
           Var (XVarPs ()) (NameOrdinary varName) <$>
-            option [] (actualArgs cStd macroParams)
+            option [] (actualArgs cStd scope)
 
     lit :: Parser Literal
     lit = ValueLit <$> choice [
@@ -415,8 +398,8 @@ literalString = do
   val <- parseTokenOfKind CXToken_Literal parseLiteralString
   return $ StringLiteral val
 
-actualArgs :: ClangCStandard -> Vec ctx Identifier -> Parser [Expr ctx (Ps ())]
-actualArgs cStd macroParams = parens $ expr cStd macroParams `sepBy` comma
+actualArgs :: ClangCStandard -> Scope ctx -> Parser [Expr ctx (Ps ())]
+actualArgs cStd scope = parens $ expr cStd scope `sepBy` comma
 
 {-------------------------------------------------------------------------------
   Expressions
@@ -426,12 +409,12 @@ actualArgs cStd macroParams = parens $ expr cStd macroParams `sepBy` comma
   follow the same structure.
 -------------------------------------------------------------------------------}
 
-exprTuple :: ClangCStandard -> Vec ctx Identifier -> Parser (Expr ctx (Ps ()))
-exprTuple cStd macroParams = try tuple <|> expr cStd macroParams
+exprTuple :: ClangCStandard -> Scope ctx -> Parser (Expr ctx (Ps ()))
+exprTuple cStd scope = try tuple <|> expr cStd scope
   where
     tuple = do
       openParen <- optionMaybe $ punctuation "("
-      (e1, e2, es) <- expr cStd macroParams `sepBy2` comma
+      (e1, e2, es) <- expr cStd scope `sepBy2` comma
       case openParen of
         Nothing -> return ()
         Just {} -> punctuation ")"
@@ -439,14 +422,14 @@ exprTuple cStd macroParams = try tuple <|> expr cStd macroParams
         Vec.reifyList es $ \es' ->
            VaApp NoXApp MTuple ( e1 ::: e2 ::: es' )
 
-expr :: forall ctx. ClangCStandard -> Vec ctx Identifier -> Parser (Expr ctx (Ps ()))
-expr cStd macroParams = buildExpressionParser ops trm <?> "expression"
+expr :: forall ctx. ClangCStandard -> Scope ctx -> Parser (Expr ctx (Ps ()))
+expr cStd scope = buildExpressionParser ops trm <?> "expression"
   where
 
     trm :: Parser (Expr ctx (Ps ()))
     trm = choice [
-          parens (expr cStd macroParams)
-        , Term <$> term cStd macroParams
+          parens (expr cStd scope)
+        , Term <$> term cStd scope
         ]
 
     -- 'OperatorTable' expects the list in descending precedence
