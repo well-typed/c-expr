@@ -7,8 +7,7 @@ module Test.CExpr.Parse.Infra (
   , lit
     -- * Running parsers
   , checkType
-  , checkMacro
-  , parseTestWith
+  , checkBody
     -- * Results
   , tyLit
   ) where
@@ -67,29 +66,19 @@ checkType ::
      ClangCStandard
   -> [Token TokenSpelling]
   -> Either MacroParseError (Expr Z (Ps ()))
-checkType cStd = runParser (parseMacroType cStd VNil <* eof)
+checkType cStd = runParser "<checkType>" (parseMacroType cStd VNil <* eof)
 
--- | Run the macro parser on a complete token sequence
+-- | Run the macro body parser on a sequence of tokens
 --
--- The first token must be the macro name (an identifier).  'parseMacro'
+-- The tokens are the macro body only, without the name or the parameter list;
+-- the formal parameters are given separately, in source order. 'parseMacroBody'
 -- itself calls 'eof', so no trailing tokens are allowed.
-checkMacro ::
+checkBody ::
      ClangCStandard
+  -> Vec ctx Identifier
   -> [Token TokenSpelling]
-  -> Either MacroParseError (Macro ())
-checkMacro cStd = runParser (parseMacro cStd)
-
--- | Run a parser on a list of (kind, spelling) pairs and print the result.
---
--- Useful for interactive debugging in GHCi:
---
--- > parseTestWith (parseMacro C17) [(CXToken_Identifier, "M"), (CXToken_Literal, "1")]
-parseTestWith ::
-     Show a
-  => Parser a
-  -> [(CXTokenKind, Text)]
-  -> IO ()
-parseTestWith p pairs = print $ runParser p (map (uncurry mkToken) pairs)
+  -> Either MacroParseError (Expr ctx (Ps ()))
+checkBody cStd params = runParser "<checkBody>" (parseMacroBody cStd params)
 
 {-------------------------------------------------------------------------------
   Results

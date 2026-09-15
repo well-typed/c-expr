@@ -1,9 +1,9 @@
 -- | Unit tests for character and string literal parsing
 --
 -- These exercise 'C.Expr.Parse.Literal.parseLiteralChar' and
--- 'C.Expr.Parse.Literal.parseLiteralString' through the public macro parser
--- ('C.Expr.Parse.parseMacro'): a @CXToken_Literal@ token whose spelling is the
--- full literal (quotes included) is fed to the parser, and the resulting
+-- 'C.Expr.Parse.Literal.parseLiteralString' through the public macro body parser
+-- ('C.Expr.Parse.parseMacroBody'): a @CXToken_Literal@ token whose spelling is
+-- the full literal (quotes included) is fed to the parser, and the resulting
 -- 'CharLiteral' / 'StringLiteral' is inspected.
 --
 -- The aim is to cover every kind of character and string literal we accept (and
@@ -18,16 +18,18 @@ module Test.CExpr.Parse.Literal (tests) where
 
 import Data.ByteString (ByteString)
 import Data.Either (isLeft)
+import Data.Nat (Nat (..))
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Vec.Lazy (Vec (..))
 import Foreign.C (CChar)
 import Test.Tasty
 import Test.Tasty.HUnit
 
+import C.Expr.Parse
 import C.Expr.Syntax
 
 import Clang.CStandard
-import Clang.HighLevel.Types
 
 import Test.CExpr.Parse.Infra
 
@@ -63,29 +65,32 @@ testWithCStd cStd = testGroup (show cStd) [
   Helpers
 -------------------------------------------------------------------------------}
 
--- | A fixed macro name token used in all tests.
-macroNameTok :: Token TokenSpelling
-macroNameTok = ident "FOO"
+-- | Parse a single literal token as an object-like macro body.
+checkLit ::
+     ClangCStandard
+  -> Text
+  -> Either MacroParseError (Expr Z (Ps ()))
+checkLit cStd spelling = checkBody cStd VNil [lit spelling]
 
--- | Extract a character literal from a parsed object-like macro body.
-getCharLit :: Either e (Macro ann) -> Maybe CharLiteral
-getCharLit (Right Macro{macroExpr}) = case macroExpr of
+-- | Extract a character literal from a parsed macro body.
+getCharLit :: Either e (Expr ctx (Ps ann)) -> Maybe CharLiteral
+getCharLit (Right body) = case body of
     Term (Literal (ValueLit (ValueChar c))) -> Just c
-    _                                        -> Nothing
+    _                                       -> Nothing
 getCharLit _ = Nothing
 
--- | Extract a string literal from a parsed object-like macro body.
-getStrLit :: Either e (Macro ann) -> Maybe StringLiteral
-getStrLit (Right Macro{macroExpr}) = case macroExpr of
+-- | Extract a string literal from a parsed macro body.
+getStrLit :: Either e (Expr ctx (Ps ann)) -> Maybe StringLiteral
+getStrLit (Right body) = case body of
     Term (Literal (ValueLit (ValueString s))) -> Just s
-    _                                          -> Nothing
+    _                                         -> Nothing
 getStrLit _ = Nothing
 
--- | Extract an integer value from a parsed object-like macro body.
-getIntVal :: Either e (Macro ann) -> Maybe Integer
-getIntVal (Right Macro{macroExpr}) = case macroExpr of
+-- | Extract an integer value from a parsed macro body.
+getIntVal :: Either e (Expr ctx (Ps ann)) -> Maybe Integer
+getIntVal (Right body) = case body of
     Term (Literal (ValueLit (ValueInt i))) -> Just (integerLiteralValue i)
-    _                                       -> Nothing
+    _                                      -> Nothing
 getIntVal _ = Nothing
 
 -- | A successful character literal: the spelling parses to the given value,
@@ -93,7 +98,7 @@ getIntVal _ = Nothing
 charCase :: ClangCStandard -> Text -> CChar -> TestTree
 charCase cStd spelling val =
     testCase (Text.unpack spelling) $
-      getCharLit (checkMacro cStd [macroNameTok, lit spelling])
+      getCharLit (checkLit cStd spelling)
         @?= Just (CharLiteral val)
 
 -- | A successful string literal: the spelling parses to the given decoded
@@ -101,7 +106,7 @@ charCase cStd spelling val =
 strCase :: ClangCStandard -> Text -> ByteString -> TestTree
 strCase cStd spelling val =
     testCase (Text.unpack spelling) $
-      getStrLit (checkMacro cStd [macroNameTok, lit spelling])
+      getStrLit (checkLit cStd spelling)
         @?= Just (StringLiteral val)
 
 -- | A literal spelling we reject (the whole macro fails to parse).
@@ -109,7 +114,7 @@ failCase :: ClangCStandard -> Text -> TestTree
 failCase cStd spelling =
     testCase (Text.unpack spelling) $
       assertBool "expected parse failure" $
-        isLeft (checkMacro cStd [macroNameTok, lit spelling])
+        isLeft (checkLit cStd spelling)
 
 {-------------------------------------------------------------------------------
   Characters: ordinary (unescaped) source characters
@@ -261,7 +266,7 @@ tests_charDigitQuirk cStd = [
     quirk :: Text -> Integer -> TestTree
     quirk spelling val =
       testCase (Text.unpack spelling) $
-        getIntVal (checkMacro cStd [macroNameTok, lit spelling]) @?= Just val
+        getIntVal (checkLit cStd spelling) @?= Just val
 
 {-------------------------------------------------------------------------------
   Strings: ordinary (unescaped) source characters

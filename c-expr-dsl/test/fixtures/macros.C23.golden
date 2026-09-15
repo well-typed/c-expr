@@ -73,15 +73,26 @@ FUNC_TUPLE: Right VaApp NoXApp MTuple (Term (LocalParam 1) ::: Term (LocalParam 
 FUNC_TUPLE_THREE: Right VaApp NoXApp MTuple (Term (LocalParam 2) ::: Term (LocalParam 1) ::: Term (LocalParam 0) ::: VNil)
 FUNC_SINGLELINE: Right VaApp NoXApp MMult (Term (LocalParam 1) ::: Term (LocalParam 0) ::: VNil)
 FUNC_MULTILINE: Right VaApp NoXApp MMult (Term (LocalParam 1) ::: Term (LocalParam 0) ::: VNil)
+KWPARAM_BOOL: Right Term (LocalParam 0)
+KWPARAM_BOOL_PTR: Right TyApp Pointer (Term (LocalParam 0) ::: VNil)
+KWPARAM_INT: Right Term (LocalParam 0)
+KWPARAM_CONST: Right Term (LocalParam 0)
+KWPARAM_SIZEOF: Right VaApp NoXApp MAdd (Term (LocalParam 0) ::: Term (Literal (ValueLit (ValueInt (IntegerLiteral {integerLiteralType = Int Signed, integerLiteralValue = 1})))) ::: VNil)
+KWPARAM_CONST_PTR: Right TyApp Pointer (Term (LocalParam 0) ::: VNil)
+KWPARAM_UNUSED: Right Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "x") [])
+KWPARAM_QUALIFIER: Left <parse error>
+KWPARAM_SPECIFIER: Left <parse error>
+KWPARAM_TAG: Left <parse error>
+KWPARAM_SHADOWS_NOTHING: Right Term (Literal (TypeLit TypeBool))
 EXPR_REF_ADD: Right VaApp NoXApp MAdd (Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "EXPR_ONE") []) ::: Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "EXPR_FORTY_TWO") []) ::: VNil)
 EXPR_CALL_ADD: Right Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "FUNC_ADD") [Term (Literal (ValueLit (ValueInt (IntegerLiteral {integerLiteralType = Int Signed, integerLiteralValue = 1})))),Term (Literal (ValueLit (ValueInt (IntegerLiteral {integerLiteralType = Int Signed, integerLiteralValue = 2}))))])
 EXPR_CALL_NESTED: Right VaApp NoXApp MAdd (Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "FUNC_ADD") [Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "EXPR_ONE") []),Term (Var (XVarPs {psAnn = ()}) (NameOrdinary "EXPR_FORTY_TWO") [])]) ::: Term (Literal (ValueLit (ValueInt (IntegerLiteral {integerLiteralType = Int Signed, integerLiteralValue = 1})))) ::: VNil)
 CAST_SINGLE_NOKW: Left <parse error>
 CAST_SINGLE_KW: Left <parse error>
 CAST_MULTI_KW: Left <parse error>
-BAD_KEYWORD_AS_PARAM: Left <parse error>
 TYPE_FUN_WITH_PARAM: Right Term (Literal (TypeLit (TypeInt Nothing (Just SizeInt))))
 BAD_TERNARY: Left <parse error>
 BAD_LONG_DOUBLE: Left <parse error>
 PACK_START: Left <parse error>
 PACK_FINISH: Left <parse error>
+bool: Right Term (Literal (TypeLit (TypeInt Nothing (Just SizeInt))))

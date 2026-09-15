@@ -53,7 +53,8 @@ tests_voidBool cStd = [
         -- _Bool
         checkType cStd [kw "_Bool"]
           @?= Right (tyLit TypeBool)
-      -- 'bool' as CXToken_Keyword (Clang >= 16)
+      -- 'bool' as CXToken_Keyword, which is how libclang classifies it under
+      -- C23 and later
     , testCase "bool (keyword)" $
         -- bool
         let res = checkType cStd [kw "bool"]
@@ -62,7 +63,8 @@ tests_voidBool cStd = [
                 res @?= Right (tyLit TypeBool)
               _ ->
                 assertBool "bool not a kw" $ isLeft res
-      -- 'bool' as CXToken_Identifier (older Clang): treated as a named type
+      -- 'bool' as CXToken_Identifier, which is how libclang classifies it
+      -- before C23: treated as a named type
     , testCase "bool (identifier)" $
         -- bool
         checkType cStd [ident "bool"]
