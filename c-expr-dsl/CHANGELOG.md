@@ -10,6 +10,12 @@
 
 ### Bug fixes
 
+* `runParser` no longer panics when given an empty token list; it returns a
+  `MacroParseError` instead. An empty macro body (`#define FOO`) is legal C and
+  may reach the parser. See [issue #2246][issue-2246].
+
+[issue-2246]: https://github.com/well-typed/hs-bindgen/issues/2246
+
 ## 0.1.0.1 -- 2026-07-22
 
 ### Bug fixes
