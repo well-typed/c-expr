@@ -4,11 +4,39 @@
 
 ### Breaking changes
 
+* `parseMacro` is replaced by `parseMacroBody`, which parses a macro *body*.
+  Splitting a `#define` into its name, formal parameter list and body is now
+  the caller's responsibility. The formal parameters are passed in source
+  order, and references to them in the body become `LocalParam`s.
+  `parseMacroBody` consumes the entire token stream (it ends with `eof`).
+  See [issue #2243][issue-2243].
+* `parseMacroType` likewise takes its formal parameters in source order.
+
 ### New features
 
 ### Minor changes
 
 ### Bug fixes
+
+* `runParser` no longer panics when given an empty token list; it returns a
+  `MacroParseError` instead. An empty macro body (`#define FOO`) is legal C and
+  may reach the parser. See [issue #2246][issue-2246].
+* A formal parameter spelled like a keyword is now recognized as the parameter.
+  The preprocessor works on pp-tokens, which have no keywords. That is,
+  `#define F(bool) bool` is valid C and its body is the parameter. The parse no
+  longer depends on how libclang classifies the spelling, which varies with the
+  C standard: `#define F(bool) bool` used to yield the type `bool` under C23,
+  and a parameter named `const` or `sizeof` used to fail to parse.
+* The shadowing above now also holds in qualifier, specifier and tag position,
+  where a token is matched by its spelling rather than looked up in the
+  parameter scope. `#define F(const) const x` used to parse as the type
+  `const x`, dropping the parameter; it is now rejected, since a qualifier
+  applied to a parameter has no representation. Likewise
+  `#define F(int) unsigned int` and `#define F(Foo) struct Foo`. Conversely
+  `#define F(const) const *` is now accepted as a pointer to the parameter.
+
+[issue-2243]: https://github.com/well-typed/hs-bindgen/issues/2243
+[issue-2246]: https://github.com/well-typed/hs-bindgen/issues/2246
 
 ## 0.1.0.1 -- 2026-07-22
 

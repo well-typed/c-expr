@@ -63,6 +63,7 @@ data Macro ann = forall (ctx :: Ctx). Macro {
       macroLoc    :: MultiLoc
     , macroName   :: Identifier
     , macroParams :: Vec ctx Identifier
+      -- ^ Formal parameters, in source order
     , macroExpr   :: Expr ctx (Ps ann)
     }
 

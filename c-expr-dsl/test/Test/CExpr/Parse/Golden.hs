@@ -1,16 +1,17 @@
--- | Golden integration tests for 'C.Expr.Parse.Expr.parseMacro'
+-- | Golden integration tests for 'C.Expr.Parse.parseMacroBody'
 --
 -- These tests use @libclang@ to tokenise the macros defined in
--- @test/fixtures/macros.h@, feed the token streams to 'parseMacro', and
--- compare the results against the golden file @test/fixtures/macros.golden@.
+-- @test/fixtures/macros.h@, split each definition into its formal parameters
+-- and its body, feed the bodies to 'parseMacroBody', and compare the results
+-- against the golden file @test/fixtures/macros.golden@.
 --
 -- Golden file can be regenerated using the @--accept@ CLI option.
 module Test.CExpr.Parse.Golden (tests) where
 
-import Data.Bifunctor (Bifunctor (..))
 import Data.ByteString.Lazy.Char8 qualified as LBS
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Vec.Lazy qualified as Vec
 import System.FilePath ((</>))
 import System.IO.Unsafe (unsafePerformIO)
 import Test.Tasty (TestName, TestTree, testGroup)
@@ -48,7 +49,7 @@ testCStandardToClangArg = \case
     CExprC23 -> "-std=c2x"
 
 tests :: TestTree
-tests = testGroup "Parse.Golden" $ [goldenWith CExprC17] ++ mbC23
+tests = testGroup "Parse.Golden" $ goldenWith CExprC17 : mbC23
   where
     mbC23 =
       case runtimeClangVersion of
@@ -78,7 +79,7 @@ goldenDynamic ::
   -> FilePath           -- ^ path to the golden file
   -> IO LBS.ByteString  -- ^ action producing the actual output
   -> TestTree
-goldenDynamic name goldenPath getActual = goldenVsString name goldenPath getActual
+goldenDynamic = goldenVsString
 
 {-------------------------------------------------------------------------------
   Run the parser on all macros in the fixture file
@@ -87,22 +88,115 @@ goldenDynamic name goldenPath getActual = goldenVsString name goldenPath getActu
 parseMacrosFixture :: TestCStandard -> FilePath -> IO LBS.ByteString
 parseMacrosFixture testCStd fixturePath = do
     macroTokens <- collectMacroTokens testCStd fixturePath
-    return $ LBS.pack $ unlines $
-      map (formatEntry . second (runParser $ parseMacro cStd)) macroTokens
+    return $ LBS.pack $ unlines $ map formatEntry macroTokens
   where
     cStd :: ClangCStandard
     cStd = ClangCStandard (testCStandardToCStandard testCStd) DisableGnu
 
-    formatEntry ::
-         Show ann
-      => (Text, Either MacroParseError (Macro ann))
-      -> String
-    formatEntry (name, result) =
-        Text.unpack name ++ ": " ++ formatResult result
+    -- A split failure is reported separately from a parse failure: the splitter
+    -- is test-local, so a regression in it must not masquerade as a parser
+    -- result.
+    formatEntry :: (Text, [Token TokenSpelling]) -> String
+    formatEntry (name, tokens) =
+        Text.unpack name ++ ": " ++
+          case splitMacro tokens of
+            Nothing              -> "Left <split error>"
+            Just (params, body)  ->
+              Vec.reifyList params $ \params' ->
+                case runParser "<parseMacrosFixture" (parseMacroBody cStd params') body of
+                  Right expr -> "Right " ++ show expr
+                  Left _     -> "Left <parse error>"
 
-    formatResult :: Show ann => Either MacroParseError (Macro ann) -> String
-    formatResult (Right (Macro{macroExpr})) = "Right " ++ show macroExpr
-    formatResult (Left _)                   = "Left <parse error>"
+{-------------------------------------------------------------------------------
+  Splitting macro definitions
+
+  Test-local and deliberately minimal: @hs-bindgen@ owns the real splitter
+  (@HsBindgen.Macro.Syntax.splitMacro@), which reports errors and handles
+  variadic macros. This one exists only so that these golden tests can keep
+  driving real @#define@s through libclang. Do not promote it into the library.
+-------------------------------------------------------------------------------}
+
+-- | Split a macro definition into its formal parameters and its body
+--
+-- The parameters are returned in source order. 'Nothing' means the definition
+-- is not one we can represent: a name that is neither an identifier nor a
+-- keyword, a malformed parameter list, or a variadic macro.
+splitMacro ::
+     [Token TokenSpelling]
+  -> Maybe ([Identifier], [Token TokenSpelling])
+splitMacro []            = Nothing
+splitMacro (name:tokens)
+    | not (isMacroName name) = Nothing
+    | otherwise              =
+        case tokens of
+          -- A macro is function-like only when the opening parenthesis follows
+          -- the name with no whitespace in between. See issue #1903:
+          -- <https://github.com/well-typed/hs-bindgen/issues/1903>
+          t:ts | adjacent name t, isPunctuation "(" t -> paramList ts
+          _otherwise                                  -> Just ([], tokens)
+  where
+    paramList ::
+         [Token TokenSpelling]
+      -> Maybe ([Identifier], [Token TokenSpelling])
+    paramList (t:ts) | isPunctuation ")" t = Just ([], ts)
+    paramList ts                           = go [] ts
+
+    go ::
+         [Identifier]
+      -> [Token TokenSpelling]
+      -> Maybe ([Identifier], [Token TokenSpelling])
+    go acc (t:u:us)
+      | Just param <- macroParam t
+      = if | isPunctuation "," u -> go (param:acc) us
+           | isPunctuation ")" u -> Just (reverse (param:acc), us)
+           | otherwise           -> Nothing
+    go _ _
+      = Nothing
+
+-- | Macro names may be keywords (@#define bool int@ is valid C)
+isMacroName :: Token TokenSpelling -> Bool
+isMacroName t = case fromSimpleEnum (tokenKind t) of
+    Right CXToken_Identifier -> True
+    Right CXToken_Keyword    -> True
+    _otherwise               -> False
+
+-- | Parameter names may be keywords, too (@#define F(bool) bool@)
+--
+-- Which spellings @libclang@ classifies as 'CXToken_Keyword' depends on the C
+-- standard in force, so the kind must not decide what counts as a parameter.
+macroParam :: Token TokenSpelling -> Maybe Identifier
+macroParam t = case fromSimpleEnum (tokenKind t) of
+    Right CXToken_Identifier -> Just name
+    Right CXToken_Keyword    -> Just name
+    _otherwise               -> Nothing
+  where
+    name = Identifier (getTokenSpelling (tokenSpelling t))
+
+isPunctuation :: String -> Token TokenSpelling -> Bool
+isPunctuation expected t =
+       fromSimpleEnum (tokenKind t) == Right CXToken_Punctuation
+    && removeMultilines (Text.unpack (getTokenSpelling (tokenSpelling t))) == expected
+
+-- | Are the two tokens adjacent in the source, with no whitespace in between?
+adjacent ::
+     Token TokenSpelling
+  -> Token TokenSpelling
+  -> Bool
+adjacent prev next =
+       singleLocPath   end == singleLocPath   start
+    && singleLocLine   end == singleLocLine   start
+    && singleLocColumn end == singleLocColumn start
+  where
+    end   = rangeEnd   $ multiLocExpansion <$> tokenExtent prev
+    start = rangeStart $ multiLocExpansion <$> tokenExtent next
+
+-- | Drop line continuations, which libclang sometimes leaves inside a token
+-- spelling
+removeMultilines :: String -> String
+removeMultilines = \case
+    '\\':'\n':cs -> removeMultilines cs
+    c:cs         -> c : removeMultilines cs
+    []           -> []
 
 {-------------------------------------------------------------------------------
   Collect macro definitions from a C header file via libclang

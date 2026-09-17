@@ -1,10 +1,9 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
-module C.Expr.Parse.Expr (parseMacro, parseMacroType) where
+module C.Expr.Parse.Expr (parseMacroBody, parseMacroType) where
 
 import Control.Monad
 import Data.Foldable qualified as Foldable
 import Data.Functor.Identity
+import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Type.Nat
 import Data.Vec.Lazy (Vec (..))
@@ -36,43 +35,32 @@ import Clang.LowLevel.Core
     <https://en.cppreference.com/w/c/language/operator_precedence>
 -------------------------------------------------------------------------------}
 
--- | Parse a macro definition (type or value expression)
+-- | Parse a macro body (type or value expression)
+--
+-- The formal parameters are given in source order, and references to them in
+-- the body become 'LocalParam's.
+--
+-- The entire token stream must be the body: 'parseMacroBody' ends with 'eof'.
 --
 -- Tries to parse the body as a type expression first. A valid type token
 -- sequence always produces @'Term' ('Type' …)@; everything else parses as an
 -- expression. Only when typechecking macros, we can fully discriminate type and
 -- value expressions.
-parseMacro :: ClangCStandard -> Parser (Macro ())
-parseMacro cStd = do
-    (macroLocRange, macroName) <- parseLocIdentifier
-    let
-        macroLoc :: MultiLoc
-        macroLoc = macroLocRange.rangeStart
-
-        functionLike :: Parser (Macro ())
-        functionLike = do
-          noWhitespace macroLocRange
-          paramNames <- formalParams
-          Vec.reifyList (reverse paramNames) $ \macroParams -> do
-            macroExpr <- bodyExpr macroParams
-            pure $ Macro macroLoc macroName (Vec.reverse macroParams) macroExpr
-
-        objectLike :: Parser (Macro ())
-        objectLike = do
-          macroExpr <- bodyExpr VNil
-          pure $ Macro macroLoc macroName VNil macroExpr
-    m <- choice [try functionLike, objectLike]
-    eof
-    return m
+parseMacroBody ::
+     forall ctx.
+     ClangCStandard
+  -> Vec ctx Identifier  -- ^ Formal parameters, in source order
+  -> Parser (Expr ctx (Ps ()))
+parseMacroBody cStd params = do
+    rejectPragma
+    -- The 'eof' inside the 'try' is essential: if 'macroType' succeeds on a
+    -- prefix (e.g. the bare identifier in @size_t + 1@) but leaves tokens
+    -- unconsumed, the whole attempt is abandoned and we fall back to the
+    -- expression parser.
+    try (macroType cStd scope <* eof) <|> (exprTuple cStd scope <* eof)
   where
-    -- Try the body as a type expression first. The @'eof'@ inside the @'try'@
-    -- is essential: if @'parseMacroType'@ succeeds on a prefix (e.g. the bare
-    -- identifier in @size_t + 1@) but leaves tokens unconsumed, the whole
-    -- attempt is abandoned and we fall back to the expression parser.
-    bodyExpr :: Vec ctx Identifier -> Parser (Expr ctx (Ps ()))
-    bodyExpr macroParams = do
-      rejectPragma
-      try (parseMacroType cStd macroParams <* eof) <|> exprTuple cStd macroParams
+    scope :: Scope ctx
+    scope = mkScope params
 
 -- | Reject macro bodies that begin with the @_Pragma@ operator
 --
@@ -94,36 +82,56 @@ rejectPragma =
       | getTokenSpelling (tokenSpelling t) == "_Pragma" = Just ()
       | otherwise                                       = Nothing
 
-formalParams :: Parser [Identifier]
-formalParams = parens $ parseIdentifier `sepBy` comma
+{-------------------------------------------------------------------------------
+  Macro parameters in scope
+-------------------------------------------------------------------------------}
 
-lookupParam :: Identifier -> Vec ctx Identifier -> Maybe (Idx ctx)
-lookupParam _ VNil    = Nothing
-lookupParam n (m ::: vec)
-  | n == m    = Just IZ
-  | otherwise = IS <$> lookupParam n vec
+-- | The formal parameters of a macro, ordered for de Bruijn lookup
+--
+-- The innermost binder comes first, so @FOO(x, y)@ binds @y@ to 'IZ' and @x@ to
+-- @'IS' 'IZ'@. This is the reverse of the source order used wherever the
+-- parameters are visible from the outside ('parseMacroBody', 'macroParams'),
+-- which is why this type exists: the two orders are otherwise indistinguishable.
+newtype Scope ctx = Scope (Vec ctx Identifier)
 
--- | Check that there is no whitespace between the previous token and the current
--- token
+-- | Build a 'Scope' from the formal parameters in source order
+mkScope :: Vec ctx Identifier -> Scope ctx
+mkScope params = Scope (Vec.reverse params)
+
+lookupParam :: forall ctx. Identifier -> Scope ctx -> Maybe (Idx ctx)
+lookupParam n (Scope params) = go params
+  where
+    go :: forall ctx'. Vec ctx' Identifier -> Maybe (Idx ctx')
+    go VNil = Nothing
+    go (m ::: vec)
+      | n == m    = Just IZ
+      | otherwise = IS <$> go vec
+
+-- | Is this spelling a formal parameter?
+isParam :: Identifier -> Scope ctx -> Bool
+isParam n = isJust . lookupParam n
+
+-- | Match a reference to a formal parameter
 --
--- Function-like macros are only function-like if there is /no/ whitespace
--- between the macro name and the opening parenthesis of the parameter list.
+-- Only the spelling decides, not the token kind. The preprocessor works on
+-- pp-tokens, which have no keywords, so @#define F(bool) bool@ is valid C in
+-- every standard, and inside the replacement list a parameter shadows every
+-- other meaning of its spelling.
 --
--- We used to not check whitespace, which was the source of a bug. See issue
--- #1903: <https://github.com/well-typed/hs-bindgen/issues/1903>
-noWhitespace ::
-     -- | Source range for the previous token
-     Range MultiLoc
-  -> Parser ()
-noWhitespace prevRange = lookAhead $ do
-    tok <- anyToken
-    let prev    = prevRange.rangeEnd.multiLocExpansion
-        current = tok.tokenExtent.rangeStart.multiLocExpansion
-        p       = prev.singleLocPath   == current.singleLocPath &&
-                  prev.singleLocLine   == current.singleLocLine &&
-                  prev.singleLocColumn == current.singleLocColumn
-    unless p $
-      parserFail "unexpected whitespace"
+-- What @libclang@ reports is instead a property of the translation unit's
+-- language options: the same @bool@ is 'CXToken_Identifier' under @-std=c17@
+-- and 'CXToken_Keyword' under @-std=c2x@. Letting that classification reach
+-- the grammar would make the parse depend on the C standard in force.
+--
+-- The shadowing is total: a spelling in scope has no meaning other than the
+-- parameter. Wherever a token is matched by kind rather than offered to this
+-- parser first — 'keyword', and the tag name in 'taggedTypeLit' — that parser
+-- must consult the scope itself and fail on a parameter spelling.
+paramRef :: Scope ctx -> Parser (Idx ctx)
+paramRef scope = token $ \t -> do
+    guard $ fromSimpleEnum (tokenKind t) `elem`
+      [Right CXToken_Identifier, Right CXToken_Keyword]
+    lookupParam (Identifier (getTokenSpelling (tokenSpelling t))) scope
 
 {-------------------------------------------------------------------------------
   Types
@@ -150,20 +158,27 @@ noWhitespace prevRange = lookAhead $ do
 --
 -- Returns an @'Expr' ctx ('Ps' ())@ where:
 --
+-- * A spelling that is a formal parameter becomes @'Term' ('LocalParam' …)@,
+--   whatever @libclang@ classifies it as; see 'paramRef'.
 -- * A keyword base type becomes @'Term' ('Literal' ('TypeLit' …))@.
 -- * A tagged base type (e.g. @struct Foo@) becomes @'Term' ('Var' …)@ with a
 --   'NameTagged' name; the typechecker resolves it.
--- * A bare identifier that is a local macro parameter becomes @'Term' ('LocalParam' …)@.
--- * A bare identifier that is a free variable becomes @'Term' ('Var' …)@;
---   the typechecker decides whether it names a type or a value.
+-- * Any other bare identifier becomes @'Term' ('Var' …)@; the typechecker
+--   decides whether it names a type or a value.
 -- * Each @const@ qualifier wraps the expression in @'TyApp' 'Const'@.
 -- * Each @*@ pointer layer wraps the expression in @'TyApp' 'Pointer'@.
-parseMacroType :: ClangCStandard -> Vec ctx Identifier -> Parser (Expr ctx (Ps ()))
-parseMacroType cStd macroParams = do
-    constBefore <- option False (True <$ keyword "const")
-    base        <- typeBase cStd macroParams
-    constAfter  <- option False (True <$ keyword "const")
-    ptrs        <- pointerLayers
+parseMacroType ::
+     ClangCStandard
+  -> Vec ctx Identifier  -- ^ Formal parameters, in source order
+  -> Parser (Expr ctx (Ps ()))
+parseMacroType cStd params = macroType cStd (mkScope params)
+
+macroType :: ClangCStandard -> Scope ctx -> Parser (Expr ctx (Ps ()))
+macroType cStd scope = do
+    constBefore <- option False (True <$ keyword scope "const")
+    base        <- typeBase cStd scope
+    constAfter  <- option False (True <$ keyword scope "const")
+    ptrs        <- pointerLayers scope
     -- In C, @const@ is idempotent: @const int const@ is valid but equivalent
     -- to @const int@. We therefore wrap with at most one 'Const' layer,
     -- regardless of whether the qualifier appeared before or after the base.
@@ -180,18 +195,22 @@ parseMacroType cStd macroParams = do
 --
 -- Returns:
 --
+-- * @'Term' ('LocalParam' …)@ for a spelling that is a local macro parameter.
 -- * @'Term' ('Literal' ('TypeLit' …))@ for keyword base types.
 -- * @'Term' ('Var' …)@ with a 'NameTagged' name for a tagged base type (e.g. @struct Foo@).
--- * @'Term' ('LocalParam' …)@ for a bare identifier that is a local macro parameter.
 -- * @'Term' ('Var' …)@ for any other bare identifier; the typechecker decides
 --   whether it names a type or a value.
-typeBase :: forall ctx. ClangCStandard -> Vec ctx Identifier -> Parser (Expr ctx (Ps ()))
-typeBase cStd macroParams =
+typeBase :: forall ctx. ClangCStandard -> Scope ctx -> Parser (Expr ctx (Ps ()))
+typeBase cStd scope =
     choice [
+        -- Macro parameter. Comes first: within the replacement list a parameter
+        -- shadows the keyword of the same spelling, so @#define F(bool) bool@
+        -- is the parameter and not the type.
+        Term . LocalParam <$> paramRef scope
         -- Type literal.
-        Term . Literal . TypeLit <$> typeLiteral cStd
+      , Term . Literal . TypeLit <$> typeLiteral cStd scope
         -- Tagged type (e.g., @struct Foo@)
-      , Term . mkTagged <$> taggedTypeLit
+      , Term . mkTagged <$> taggedTypeLit scope
         -- The bare identifier (typedef name, type macro, or expression
         -- variable) is needed to parse pointer-qualified typedef references
         -- such as @size_t *@: without it, @parseMacroType@ would reject the
@@ -207,9 +226,7 @@ typeBase cStd macroParams =
     mkTagged (tag, ident) = Var (XVarPs ()) (NameTagged ident tag) []
 
     mkVar :: Identifier -> Term ctx (Ps ())
-    mkVar n = case lookupParam n macroParams of
-      Just i  -> LocalParam i
-      Nothing -> Var (XVarPs ()) (NameOrdinary n) []
+    mkVar n = Var (XVarPs ()) (NameOrdinary n) []
 
 -- | Parse a sequence of type-literal keywords and combine them
 --
@@ -222,9 +239,9 @@ typeBase cStd macroParams =
 -- @
 --
 -- are all the same type.
-typeLiteral :: ClangCStandard -> Parser TypeLit
-typeLiteral cStd = do
-    kws <- many1 (typeKeyword cStd)
+typeLiteral :: ClangCStandard -> Scope ctx -> Parser TypeLit
+typeLiteral cStd scope = do
+    kws <- many1 (typeKeyword cStd scope)
     case interpretKeywords kws of
       Just lit -> return lit
       Nothing  -> fail "unrecognised type literal"
@@ -236,14 +253,18 @@ typeLiteral cStd = do
 --   union  tag
 --   enum   tag
 -- @
-taggedTypeLit :: Parser (TagKind, Identifier)
-taggedTypeLit = do
-    tag <- choice [
-        TagStruct <$ keyword "struct"
-      , TagUnion  <$ keyword "union"
-      , TagEnum   <$ keyword "enum"
+--
+-- A formal parameter as the tag name is rejected: 'NameTagged' has no room for
+-- a de Bruijn index, so @#define F(Foo) struct Foo@ has no representation.
+taggedTypeLit :: Scope ctx -> Parser (TagKind, Identifier)
+taggedTypeLit scope = do
+    tag  <- choice [
+        TagStruct <$ keyword scope "struct"
+      , TagUnion  <$ keyword scope "union"
+      , TagEnum   <$ keyword scope "enum"
       ]
     name <- parseIdentifier
+    guard $ not (isParam name scope)
     return (tag, name)
 
 data TypeKeyword =
@@ -253,18 +274,18 @@ data TypeKeyword =
   | KwVoid | KwBool
   deriving stock (Eq)
 
-typeKeyword :: ClangCStandard -> Parser TypeKeyword
-typeKeyword cStd = choice $
-      [ KwSigned   <$ keyword "signed"
-      , KwUnsigned <$ keyword "unsigned"
-      , KwShort    <$ keyword "short"
-      , KwInt      <$ keyword "int"
-      , KwLong     <$ keyword "long"
-      , KwChar     <$ keyword "char"
-      , KwFloat    <$ keyword "float"
-      , KwDouble   <$ keyword "double"
-      , KwVoid     <$ keyword "void"
-      , KwBool     <$ keyword "_Bool"
+typeKeyword :: ClangCStandard -> Scope ctx -> Parser TypeKeyword
+typeKeyword cStd scope = choice $
+      [ KwSigned   <$ keyword scope "signed"
+      , KwUnsigned <$ keyword scope "unsigned"
+      , KwShort    <$ keyword scope "short"
+      , KwInt      <$ keyword scope "int"
+      , KwLong     <$ keyword scope "long"
+      , KwChar     <$ keyword scope "char"
+      , KwFloat    <$ keyword scope "float"
+      , KwDouble   <$ keyword scope "double"
+      , KwVoid     <$ keyword scope "void"
+      , KwBool     <$ keyword scope "_Bool"
       ]
       ++
       -- @bool@ is a keyword in C23 and later.
@@ -272,7 +293,7 @@ typeKeyword cStd = choice $
         ClangCStandard std _ | std >= C23 -> [bool]
         _                                 -> []
   where
-    bool = KwBool <$ keyword "bool"
+    bool = KwBool <$ keyword scope "bool"
 
 -- | Combine a list of type keywords into a type literal
 --
@@ -329,29 +350,37 @@ extractIntSize kws
   -- We return Nothing here; the caller interprets (Just sign, Nothing) as int.
 
 -- | Parse zero or more pointer indirections, optionally followed by @const@
-pointerLayers :: Parser [Bool]
-pointerLayers = many pointerLayer
+pointerLayers :: Scope ctx -> Parser [Bool]
+pointerLayers scope = many (pointerLayer scope)
 
 -- | Parse a pointer indirection, optionally followed by @const@
-pointerLayer :: Parser Bool
-pointerLayer = do
+pointerLayer :: Scope ctx -> Parser Bool
+pointerLayer scope = do
     punctuation "*"
-    option False (True <$ keyword "const")
+    option False (True <$ keyword scope "const")
 
 -- | Match a keyword token with the given spelling
-keyword :: Text -> Parser ()
-keyword expected = token $ \t ->
-    if fromSimpleEnum (tokenKind t) == Right CXToken_Keyword
-       && getTokenSpelling (tokenSpelling t) == expected
-      then Just ()
-      else Nothing
+--
+-- Fails when the spelling is a formal parameter. A keyword in qualifier or
+-- specifier position is never offered to 'paramRef', so the shadowing has to
+-- be enforced here.
+keyword :: Scope ctx -> Text -> Parser ()
+keyword scope expected
+  | isParam (Identifier expected) scope = parserZero
+  | otherwise                                         = token $ \case
+      (Token k s _ _)
+        | fromSimpleEnum k == Right CXToken_Keyword
+          && getTokenSpelling s == expected ->
+            Just ()
+        | otherwise ->
+            Nothing
 
 {-------------------------------------------------------------------------------
   Simple expressions
 -------------------------------------------------------------------------------}
 
-term :: forall ctx. ClangCStandard -> Vec ctx Identifier -> Parser (Term ctx (Ps ()))
-term cStd macroParams =
+term :: forall ctx. ClangCStandard -> Scope ctx -> Parser (Term ctx (Ps ()))
+term cStd scope =
     buildExpressionParser ops trm <?> "simple expression"
   where
     trm :: Parser (Term ctx (Ps ()))
@@ -360,15 +389,15 @@ term cStd macroParams =
       , localParamOrVar
       ]
 
+    -- As in 'typeBase', the parameter scope is consulted before the token is
+    -- interpreted as a keyword or as a free variable.
     localParamOrVar :: Parser (Term ctx (Ps ()))
-    localParamOrVar = do
-      varName <- parseIdentifier
-      case lookupParam varName macroParams of
-        Just i ->
-          pure $ LocalParam i
-        Nothing ->
-          Var (XVarPs ()) (NameOrdinary varName) <$>
-            option [] (actualArgs cStd macroParams)
+    localParamOrVar = choice [
+          LocalParam <$> paramRef scope
+        , do varName <- parseIdentifier
+             Var (XVarPs ()) (NameOrdinary varName) <$>
+               option [] (actualArgs cStd scope)
+        ]
 
     lit :: Parser Literal
     lit = ValueLit <$> choice [
@@ -415,8 +444,8 @@ literalString = do
   val <- parseTokenOfKind CXToken_Literal parseLiteralString
   return $ StringLiteral val
 
-actualArgs :: ClangCStandard -> Vec ctx Identifier -> Parser [Expr ctx (Ps ())]
-actualArgs cStd macroParams = parens $ expr cStd macroParams `sepBy` comma
+actualArgs :: ClangCStandard -> Scope ctx -> Parser [Expr ctx (Ps ())]
+actualArgs cStd scope = parens $ expr cStd scope `sepBy` comma
 
 {-------------------------------------------------------------------------------
   Expressions
@@ -426,12 +455,12 @@ actualArgs cStd macroParams = parens $ expr cStd macroParams `sepBy` comma
   follow the same structure.
 -------------------------------------------------------------------------------}
 
-exprTuple :: ClangCStandard -> Vec ctx Identifier -> Parser (Expr ctx (Ps ()))
-exprTuple cStd macroParams = try tuple <|> expr cStd macroParams
+exprTuple :: ClangCStandard -> Scope ctx -> Parser (Expr ctx (Ps ()))
+exprTuple cStd scope = try tuple <|> expr cStd scope
   where
     tuple = do
       openParen <- optionMaybe $ punctuation "("
-      (e1, e2, es) <- expr cStd macroParams `sepBy2` comma
+      (e1, e2, es) <- expr cStd scope `sepBy2` comma
       case openParen of
         Nothing -> return ()
         Just {} -> punctuation ")"
@@ -439,14 +468,14 @@ exprTuple cStd macroParams = try tuple <|> expr cStd macroParams
         Vec.reifyList es $ \es' ->
            VaApp NoXApp MTuple ( e1 ::: e2 ::: es' )
 
-expr :: forall ctx. ClangCStandard -> Vec ctx Identifier -> Parser (Expr ctx (Ps ()))
-expr cStd macroParams = buildExpressionParser ops trm <?> "expression"
+expr :: forall ctx. ClangCStandard -> Scope ctx -> Parser (Expr ctx (Ps ()))
+expr cStd scope = buildExpressionParser ops trm <?> "expression"
   where
 
     trm :: Parser (Expr ctx (Ps ()))
     trm = choice [
-          parens (expr cStd macroParams)
-        , Term <$> term cStd macroParams
+          parens (expr cStd scope)
+        , Term <$> term cStd scope
         ]
 
     -- 'OperatorTable' expects the list in descending precedence

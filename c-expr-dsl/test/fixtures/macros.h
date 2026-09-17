@@ -1,7 +1,8 @@
 // Fixture for c-expr-dsl golden tests.
 //
-// Each macro is parsed using libclang and then fed to 'parseMacro'. The
-// results are compared against the golden file macros.golden.
+// Each macro is tokenised using libclang, split into its formal parameters and
+// its body, and then fed to 'parseMacroBody'. The results are compared against
+// the golden file macros.golden.
 
 // ---------------------------------------------------------------------------
 // Type macros: void and bool
@@ -192,6 +193,36 @@ x * y\
 y
 
 // ---------------------------------------------------------------------------
+// Function-like macros: parameters spelled like keywords
+//
+// The preprocessor works on pp-tokens, which have no keywords, so these are
+// valid C in every standard, and inside the replacement list the parameter
+// shadows the keyword. libclang classifies the spelling according to the
+// language options of the translation unit ('bool' is CXToken_Identifier under
+// -std=c17 and CXToken_Keyword under -std=c2x), so every parameter reference
+// below must come out identical in both golden files.
+// ---------------------------------------------------------------------------
+
+#define KWPARAM_BOOL(bool) bool
+#define KWPARAM_BOOL_PTR(bool) bool *
+#define KWPARAM_INT(int) int
+#define KWPARAM_CONST(const) const
+#define KWPARAM_SIZEOF(sizeof) sizeof + 1
+#define KWPARAM_CONST_PTR(const) const *
+// The parameter is unused, so the body is an ordinary free variable
+#define KWPARAM_UNUSED(int) x
+// The shadowing also holds in qualifier, specifier and tag position. None of
+// these bodies is representable (a qualifier or specifier applied to a
+// parameter has no syntax tree), so all must be rejected rather than parsed
+// with the parameter silently dropped.
+#define KWPARAM_QUALIFIER(const) const x
+#define KWPARAM_SPECIFIER(int) unsigned int
+#define KWPARAM_TAG(Foo) struct Foo
+// 'bool' is not a parameter here, so it keeps its keyword meaning: the type
+// bool under C23, a named type under C17
+#define KWPARAM_SHADOWS_NOTHING(x) bool
+
+// ---------------------------------------------------------------------------
 // Expression macros: references to other macros / typedefs
 //
 // Macro names and typedef names are tokenised as CXToken_Identifier, so
@@ -221,9 +252,6 @@ y
 #define CAST_SINGLE_KW (int)x
 #define CAST_MULTI_KW (unsigned int)x
 
-// This is genuine erroneous function; keywords must not be parameter names.
-#define BAD_KEYWORD_AS_PARAM(int) x
-
 // We can parse this macro, but typecheck will fail.
 #define TYPE_FUN_WITH_PARAM(X) int
 
@@ -239,3 +267,11 @@ y
 // expands to a preprocessing directive, not a C expression, so we reject it.
 #define PACK_START _Pragma("pack(1)")
 #define PACK_FINISH _Pragma("pack()")
+
+// ---------------------------------------------------------------------------
+// A macro name spelled like a keyword
+//
+// Also valid C. Defined last, because from here on the spelling is a macro.
+// ---------------------------------------------------------------------------
+
+#define bool int

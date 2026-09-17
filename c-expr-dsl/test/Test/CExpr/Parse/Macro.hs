@@ -1,23 +1,17 @@
-{-# LANGUAGE CPP #-}
-
-#if __GLASGOW_HASKELL__ >=908
-{-# LANGUAGE TypeAbstractions #-}
-#endif
-
--- | Unit tests for 'C.Expr.Parse.Expr.parseMacro'
+-- | Unit tests for 'C.Expr.Parse.parseMacroBody'
 --
--- Tests the full macro parser, focusing on:
+-- Tests the macro body parser, focusing on:
 --
 -- * Type bodies vs expression bodies (disambiguation)
--- * Object-like and function-like expression macros
+-- * Bodies of object-like and function-like macros
+--
+-- Splitting a definition into name, formal parameters and body is the
+-- embedder's job, so the parameters are an input here rather than something
+-- the parser recovers from the token stream.
 module Test.CExpr.Parse.Macro (tests) where
 
 import Data.Either (isLeft, isRight)
-import Data.Nat (Nat (..))
-import Data.Type.Equality ((:~:) (..))
-import Data.Type.Nat qualified as Nat
 import Data.Vec.Lazy (Vec (..))
-import Data.Vec.Lazy qualified as Vec
 import DeBruijn (Idx (..), pattern I1)
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -25,7 +19,6 @@ import Test.Tasty.HUnit
 import C.Expr.Syntax
 
 import Clang.CStandard
-import Clang.HighLevel.Types
 
 import Test.CExpr.Parse.Infra
 import Test.CExpr.Typecheck.Infra (add, intLit, mtagged, mtuple, mvar)
@@ -43,6 +36,7 @@ testsWithCStd :: CStandard -> TestTree
 testsWithCStd cStd = testGroup (show cStd) [
       testGroup "type bodies"               $ tests_typeBody         std
     , testGroup "function-like type bodies" $ tests_funcLikeTypeBody std
+    , testGroup "keyword parameters"        $ tests_keywordParam     std
     , testGroup "expression bodies"         $ tests_exprBody         std
     , testGroup "comma bodies"              $ tests_commaBody        std
     , testGroup "disambiguation"            $ tests_disambiguation   std
@@ -54,56 +48,28 @@ testsWithCStd cStd = testGroup (show cStd) [
   Helpers
 -------------------------------------------------------------------------------}
 
--- | A fixed macro name token used in all tests
-macroNameTok :: Token TokenSpelling
-macroNameTok = ident "FOO"
-
 -- | True when the macro expression looks like a type: it has an 'Type' or
 -- 'TyApp' at its core (bare identifier cases are intentionally excluded
 -- because a bare name is structurally identical in both type and expression
 -- position after the refactor).
-isTypeBody :: Either e (Macro ann) -> Bool
-isTypeBody (Right Macro{macroExpr}) = case macroExpr of
+isTypeBody :: Either e (Expr ctx (Ps ann)) -> Bool
+isTypeBody (Right body) = case body of
     Term (Literal (TypeLit _)) -> True
-    TyApp {}       -> True
-    _               -> False
+    TyApp {}                   -> True
+    _                          -> False
 isTypeBody _ = False
 
 -- | True when the macro expression is unambiguously an expression (a literal
 -- or an operator application), not a type.
-isExprBody :: Either e (Macro ann) -> Bool
-isExprBody (Right Macro{macroExpr}) = case macroExpr of
+isExprBody :: Either e (Expr ctx (Ps ann)) -> Bool
+isExprBody (Right body) = case body of
     Term (Literal (ValueLit (ValueInt _)))    -> True
     Term (Literal (ValueLit (ValueFloat _)))  -> True
     Term (Literal (ValueLit (ValueChar _)))   -> True
     Term (Literal (ValueLit (ValueString _))) -> True
-    VaApp {}         -> True
-    _                 -> False
+    VaApp {}                                  -> True
+    _                                         -> False
 isExprBody _ = False
-
-getMacroExpr ::
-     forall e ctx ann. Nat.SNatI ctx
-  => Either e (Macro ann)
-  -> Maybe (Expr ctx (Ps ann))
-getMacroExpr (Right (Macro @_ @ctx1 _ _ macroParams macroExpr)) =
-    Vec.withDict macroParams $
-      case Nat.eqNat @ctx @ctx1 of
-        Just Refl -> Just macroExpr
-        Nothing   -> Nothing
-getMacroExpr _ =
-    Nothing
-
--- | Extract the expression body from an object-like (0-arg) macro.
-getObjExpr :: forall e ann. Either e (Macro ann) -> Maybe (Expr Z (Ps ann))
-getObjExpr = getMacroExpr
-
--- | Extract the expression body from a function-like macro with one parameter.
-getFn1Expr :: forall e ann. Either e (Macro ann) -> Maybe (Expr (S Z) (Ps ann))
-getFn1Expr = getMacroExpr
-
--- | Extract the expression body from a function-like macro with two parameters.
-getFn2Expr :: forall e ann. Either e (Macro ann) -> Maybe (Expr (S (S Z)) (Ps ann))
-getFn2Expr = getMacroExpr
 
 {-------------------------------------------------------------------------------
   Type bodies
@@ -113,36 +79,36 @@ tests_typeBody :: ClangCStandard -> [TestTree]
 tests_typeBody cStd = [
       testCase "int" $
         -- #define FOO int
-        getObjExpr (checkMacro cStd [macroNameTok, kw "int"])
-          @?= Just (tyLit (TypeInt Nothing (Just SizeInt)))
+        checkBody cStd VNil [kw "int"]
+          @?= Right (tyLit (TypeInt Nothing (Just SizeInt)))
     , testCase "unsigned long" $
         -- #define FOO unsigned long
-        getObjExpr (checkMacro cStd [macroNameTok, kw "unsigned", kw "long"])
-          @?= Just (tyLit (TypeInt (Just Unsigned) (Just SizeLong)))
+        checkBody cStd VNil [kw "unsigned", kw "long"]
+          @?= Right (tyLit (TypeInt (Just Unsigned) (Just SizeLong)))
     , testCase "const int*" $
         -- #define FOO const int *
-        getObjExpr (checkMacro cStd [macroNameTok, kw "const", kw "int", punc "*"])
-          @?= Just (TyApp Pointer (TyApp Const (tyLit (TypeInt Nothing (Just SizeInt)) ::: VNil) ::: VNil))
+        checkBody cStd VNil [kw "const", kw "int", punc "*"]
+          @?= Right (TyApp Pointer (TyApp Const (tyLit (TypeInt Nothing (Just SizeInt)) ::: VNil) ::: VNil))
     , testCase "void*" $
         -- #define FOO void *
-        getObjExpr (checkMacro cStd [macroNameTok, kw "void", punc "*"])
-          @?= Just (TyApp Pointer (tyLit TypeVoid ::: VNil))
+        checkBody cStd VNil [kw "void", punc "*"]
+          @?= Right (TyApp Pointer (tyLit TypeVoid ::: VNil))
     , testCase "struct Foo" $
         -- #define FOO struct Foo
-        getObjExpr (checkMacro cStd [macroNameTok, kw "struct", ident "Foo"])
-          @?= Just (mtagged "Foo" TagStruct)
+        checkBody cStd VNil [kw "struct", ident "Foo"]
+          @?= Right (mtagged "Foo" TagStruct)
     , testCase "size_t" $
         -- #define FOO size_t (bare identifier; typechecker decides it's a type)
-        getObjExpr (checkMacro cStd [macroNameTok, ident "size_t"])
-          @?= Just (mvar "size_t")
+        checkBody cStd VNil [ident "size_t"]
+          @?= Right (mvar "size_t")
     , testCase "_Bool" $
         -- #define FOO _Bool
-        getObjExpr (checkMacro cStd [macroNameTok, kw "_Bool"])
-          @?= Just (tyLit TypeBool)
-    , testCase "_Bool" $
+        checkBody cStd VNil [kw "_Bool"]
+          @?= Right (tyLit TypeBool)
+    , testCase "size_t const * const" $
         -- #define FOO size_t const * const
-        getObjExpr (checkMacro cStd [macroNameTok, ident "size_t", kw "const", punc "*", kw "const" ])
-          @?= Just (TyApp Const (TyApp Pointer (TyApp Const (mvar "size_t" ::: VNil) ::: VNil) ::: VNil))
+        checkBody cStd VNil [ident "size_t", kw "const", punc "*", kw "const"]
+          @?= Right (TyApp Const (TyApp Pointer (TyApp Const (mvar "size_t" ::: VNil) ::: VNil) ::: VNil))
     ]
 
 {-------------------------------------------------------------------------------
@@ -154,26 +120,92 @@ tests_funcLikeTypeBody cStd = [
       testCase "PTR(T) = T*" $
         -- #define PTR(T) T*
         -- T is a local arg; the body is a pointer type parameterised by T.
-        getFn1Expr (checkMacro cStd
-            [ macroNameTok, punc "(", ident "T", punc ")"
-            , ident "T", punc "*"
-            ])
-          @?= Just (TyApp Pointer (Term (LocalParam IZ) ::: VNil))
+        checkBody cStd (Identifier "T" ::: VNil) [ident "T", punc "*"]
+          @?= Right (TyApp Pointer (Term (LocalParam IZ) ::: VNil))
     , testCase "CONST_PTR(T) = const T*" $
         -- #define CONST_PTR(T) const T*
-        getFn1Expr (checkMacro cStd
-            [ macroNameTok, punc "(", ident "T", punc ")"
-            , kw "const", ident "T", punc "*"
-            ])
-          @?= Just (TyApp Pointer (TyApp Const (Term (LocalParam IZ) ::: VNil) ::: VNil))
+        checkBody cStd (Identifier "T" ::: VNil) [kw "const", ident "T", punc "*"]
+          @?= Right (TyApp Pointer (TyApp Const (Term (LocalParam IZ) ::: VNil) ::: VNil))
     , testCase "free var is not a local arg" $
         -- #define PTR(T) size_t*
         -- size_t is not a formal parameter, so it stays as Var, not LocalParam.
-        getFn1Expr (checkMacro cStd
-            [ macroNameTok, punc "(", ident "T", punc ")"
-            , ident "size_t", punc "*"
-            ])
-          @?= Just (TyApp Pointer (mvar "size_t" ::: VNil))
+        checkBody cStd (Identifier "T" ::: VNil) [ident "size_t", punc "*"]
+          @?= Right (TyApp Pointer (mvar "size_t" ::: VNil))
+    ]
+
+{-------------------------------------------------------------------------------
+  Parameters spelled like keywords
+
+  The preprocessor works on pp-tokens, which have no keywords, so
+  @#define F(bool) bool@ is valid C in every standard and the body's @bool@ is
+  the parameter. libclang classifies the spelling according to the translation
+  unit's language options, so the same body arrives as 'kw' under C23 and as
+  'ident' under C17; both must parse the same way.
+-------------------------------------------------------------------------------}
+
+tests_keywordParam :: ClangCStandard -> [TestTree]
+tests_keywordParam cStd = [
+      testCase "F(bool) = bool (keyword token)" $
+        -- #define F(bool) bool
+        checkBody cStd (Identifier "bool" ::: VNil) [kw "bool"]
+          @?= Right (Term (LocalParam IZ))
+    , testCase "F(bool) = bool (identifier token)" $
+        -- #define F(bool) bool
+        checkBody cStd (Identifier "bool" ::: VNil) [ident "bool"]
+          @?= Right (Term (LocalParam IZ))
+    , testCase "F(bool) = bool*" $
+        -- #define F(bool) bool *
+        checkBody cStd (Identifier "bool" ::: VNil) [kw "bool", punc "*"]
+          @?= Right (TyApp Pointer (Term (LocalParam IZ) ::: VNil))
+    , testCase "F(int) = int" $
+        -- #define F(int) int
+        checkBody cStd (Identifier "int" ::: VNil) [kw "int"]
+          @?= Right (Term (LocalParam IZ))
+    , testCase "F(const) = const" $
+        -- #define F(const) const
+        checkBody cStd (Identifier "const" ::: VNil) [kw "const"]
+          @?= Right (Term (LocalParam IZ))
+    , testCase "F(sizeof) = sizeof + 1" $
+        -- #define F(sizeof) sizeof + 1
+        checkBody cStd (Identifier "sizeof" ::: VNil)
+            [kw "sizeof", punc "+", lit "1"]
+          @?= Right (add (Term (LocalParam IZ)) (intLit 1))
+      -- The shadowing also holds in qualifier and specifier position, where the
+      -- token is matched by spelling and kind rather than looked up in scope.
+    , testCase "F(const) = const *" $
+        -- #define F(const) const *
+        checkBody cStd (Identifier "const" ::: VNil) [kw "const", punc "*"]
+          @?= Right (TyApp Pointer (Term (LocalParam IZ) ::: VNil))
+    , testCase "F(const) = const x is not a qualified type" $
+        -- #define F(const) const x
+        -- The parameter is not the 'const' qualifier, and a qualifier applied
+        -- to a parameter is not representable, so this must fail rather than
+        -- silently yield @const x@ with the parameter dropped.
+        assertBool "expected failure" $
+          isLeft (checkBody cStd (Identifier "const" ::: VNil)
+                    [kw "const", ident "x"])
+    , testCase "F(int) = unsigned int is not a type literal" $
+        -- #define F(int) unsigned int
+        assertBool "expected failure" $
+          isLeft (checkBody cStd (Identifier "int" ::: VNil)
+                    [kw "unsigned", kw "int"])
+    , testCase "F(Foo) = struct Foo is not a tagged type" $
+        -- #define F(Foo) struct Foo
+        -- A parameter as the tag name is not representable either.
+        assertBool "expected failure" $
+          isLeft (checkBody cStd (Identifier "Foo" ::: VNil)
+                    [kw "struct", ident "Foo"])
+      -- The complement: a keyword that is /not/ a parameter keeps its keyword
+      -- meaning. An over-broad fix (accepting keywords as identifiers) would
+      -- turn this into a variable reference.
+    , testCase "F(x) = bool is still the type bool" $
+        -- #define F(x) bool
+        let res = checkBody cStd (Identifier "x" ::: VNil) [kw "bool"]
+        in  case cStd of
+              ClangCStandard std _ | std >= C23 ->
+                res @?= Right (tyLit TypeBool)
+              _ ->
+                assertBool "bool not a kw" $ isLeft res
     ]
 
 {-------------------------------------------------------------------------------
@@ -186,38 +218,33 @@ tests_exprBody cStd = [
       testCase "integer literal" $
         -- #define FOO 42
         assertBool "expected expression body" $
-          isExprBody (checkMacro cStd [macroNameTok, lit "42"])
+          isExprBody (checkBody cStd VNil [lit "42"])
     , testCase "negative literal" $
         -- #define FOO -1
         assertBool "expected expression body" $
-          isExprBody (checkMacro cStd [macroNameTok, punc "-", lit "1"])
+          isExprBody (checkBody cStd VNil [punc "-", lit "1"])
     , testCase "arithmetic expression" $
         -- #define FOO 1 + 2
         assertBool "expected expression body" $
-          isExprBody (checkMacro cStd [macroNameTok, lit "1", punc "+", lit "2"])
+          isExprBody (checkBody cStd VNil [lit "1", punc "+", lit "2"])
       -- Function-like macros
       -- A bare identifier body (e.g. x) is structurally identical for type and
       -- expression positions after the Expr unification; we just check it parses.
     , testCase "identity function" $
         -- #define FOO(x) x
         assertBool "expected parse success" $
-          isRight $
-            checkMacro cStd [
-                macroNameTok, punc "(", ident "x", punc ")"
-              , ident "x"
-              ]
+          isRight $ checkBody cStd (Identifier "x" ::: VNil) [ident "x"]
     , testCase "two-argument function" $
         -- #define FOO(a, b) a + b
+        -- Parameters are given in source order; the /last/ one is the innermost
+        -- binder, so a is I1 and b is IZ.
+        checkBody cStd (Identifier "a" ::: Identifier "b" ::: VNil)
+            [ident "a", punc "+", ident "b"]
+          @?= Right (add (Term (LocalParam I1)) (Term (LocalParam IZ)))
+    , testCase "zero-argument function" $
+        -- #define FOO() 0
         assertBool "expected expression body" $
-          isExprBody $
-            checkMacro cStd [
-                macroNameTok
-              , punc "(", ident "a", punc ",", ident "b", punc ")"
-              , ident "a", punc "+", ident "b"
-              ]
-      -- Zero-argument function-like macro (#define FOO() 0) is
-      -- parsed as objectLike since empty parens are not valid formalArgs;
-      -- the result is still an expression body
+          isExprBody (checkBody cStd VNil [lit "0"])
     ]
 
 {-------------------------------------------------------------------------------
@@ -231,47 +258,34 @@ tests_commaBody :: ClangCStandard -> [TestTree]
 tests_commaBody cStd = [
       testCase "(1, 2)" $
         -- #define FOO (1, 2)
-        getObjExpr (checkMacro cStd
-            [ macroNameTok
-            , punc "(", lit "1", punc ",", lit "2", punc ")"
-            ])
-          @?= Just (mtuple (intLit 1 ::: intLit 2 ::: VNil))
+        checkBody cStd VNil [punc "(", lit "1", punc ",", lit "2", punc ")"]
+          @?= Right (mtuple (intLit 1 ::: intLit 2 ::: VNil))
     , testCase "1, 2 (without parentheses)" $
         -- #define FOO 1, 2
-        getObjExpr (checkMacro cStd
-            [macroNameTok, lit "1", punc ",", lit "2"])
-          @?= Just (mtuple (intLit 1 ::: intLit 2 ::: VNil))
+        checkBody cStd VNil [lit "1", punc ",", lit "2"]
+          @?= Right (mtuple (intLit 1 ::: intLit 2 ::: VNil))
     , testCase "(1, 2, 3)" $
         -- #define FOO (1, 2, 3)
-        getObjExpr (checkMacro cStd
-            [ macroNameTok
-            , punc "(", lit "1", punc ",", lit "2", punc ",", lit "3", punc ")"
-            ])
-          @?= Just (mtuple (intLit 1 ::: intLit 2 ::: intLit 3 ::: VNil))
+        checkBody cStd VNil
+            [punc "(", lit "1", punc ",", lit "2", punc ",", lit "3", punc ")"]
+          @?= Right (mtuple (intLit 1 ::: intLit 2 ::: intLit 3 ::: VNil))
     , testCase "components are full expressions" $
         -- #define FOO (1 + 2, 3)
-        getObjExpr (checkMacro cStd
-            [ macroNameTok
-            , punc "(", lit "1", punc "+", lit "2", punc ",", lit "3", punc ")"
-            ])
-          @?= Just (mtuple (add (intLit 1) (intLit 2) ::: intLit 3 ::: VNil))
+        checkBody cStd VNil
+            [punc "(", lit "1", punc "+", lit "2", punc ",", lit "3", punc ")"]
+          @?= Right (mtuple (add (intLit 1) (intLit 2) ::: intLit 3 ::: VNil))
     , testCase "FOO(x, y) = (x, y)" $
         -- #define FOO(x, y) (x, y)
-        getFn2Expr (checkMacro cStd
-            [ macroNameTok
-            , punc "(", ident "x", punc ",", ident "y", punc ")"
-            , punc "(", ident "x", punc ",", ident "y", punc ")"
-            ])
-          @?= Just (mtuple (Term (LocalParam I1) ::: Term (LocalParam IZ) ::: VNil))
+        checkBody cStd (Identifier "x" ::: Identifier "y" ::: VNil)
+            [punc "(", ident "x", punc ",", ident "y", punc ")"]
+          @?= Right (mtuple (Term (LocalParam I1) ::: Term (LocalParam IZ) ::: VNil))
     , testCase "FOO(x, y) = ((x), (y))" $
         -- #define FOO(x, y) ((x), (y))
-        getFn2Expr (checkMacro cStd
-            [ macroNameTok
-            , punc "(", ident "x", punc ",", ident "y", punc ")"
-            , punc "(", punc "(", ident "x", punc ")", punc ","
+        checkBody cStd (Identifier "x" ::: Identifier "y" ::: VNil)
+            [ punc "(", punc "(", ident "x", punc ")", punc ","
             ,           punc "(", ident "y", punc ")", punc ")"
-            ])
-          @?= Just (mtuple (Term (LocalParam I1) ::: Term (LocalParam IZ) ::: VNil))
+            ]
+          @?= Right (mtuple (Term (LocalParam I1) ::: Term (LocalParam IZ) ::: VNil))
     ]
 
 {-------------------------------------------------------------------------------
@@ -286,29 +300,28 @@ tests_disambiguation cStd = [
       testCase "bare name parses successfully" $
         -- #define FOO size_t
         assertBool "expected parse success" $
-          isRight (checkMacro cStd [macroNameTok, ident "size_t"])
+          isRight (checkBody cStd VNil [ident "size_t"])
     , testCase "void is a type body, not an identifier expression" $
         -- #define FOO void
         assertBool "expected type body" $
-          isTypeBody (checkMacro cStd [macroNameTok, kw "void"])
+          isTypeBody (checkBody cStd VNil [kw "void"])
       -- An integer literal cannot be a type, so it falls through to expression.
     , testCase "literal falls through to expression" $
         -- #define FOO 0
         assertBool "expected expression body" $
-          isExprBody (checkMacro cStd [macroNameTok, lit "0"])
-      -- An expression that starts with parenthesised identifiers could look
-      -- like formal arguments.
+          isExprBody (checkBody cStd VNil [lit "0"])
+      -- A parenthesised literal is not a type either.
     , testCase "parenthesised expression is not a type" $
         -- #define FOO (1)
         assertBool "expected expression body" $
-          isExprBody (checkMacro cStd [macroNameTok, punc "(", lit "1", punc ")"])
+          isExprBody (checkBody cStd VNil [punc "(", lit "1", punc ")"])
       -- Completely unparseable input
     , testCase "bare comma fails" $
         -- #define FOO ,
         assertBool "expected failure" $
-          isLeft (checkMacro cStd [macroNameTok, punc ","])
+          isLeft (checkBody cStd VNil [punc ","])
     , testCase "empty body fails" $
         -- #define FOO
         assertBool "expected failure" $
-          isLeft (checkMacro cStd [macroNameTok])
+          isLeft (checkBody cStd VNil [])
     ]

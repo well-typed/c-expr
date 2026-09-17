@@ -22,12 +22,9 @@ import Data.Bifunctor
 import Data.Text (Text)
 import Data.Text qualified as Text
 import GHC.Generics
-import GHC.Stack
 import Text.Parsec hiding (runParser, token, tokens)
 import Text.Parsec qualified as Parsec
 import Text.Parsec.Pos
-
-import C.Expr.Util.Panic
 
 import Clang.Enum.Simple
 import Clang.HighLevel.Types
@@ -40,23 +37,15 @@ import Clang.Paths
 
 type Parser = Parsec [Token TokenSpelling] ()
 
+-- | Run a parser on a stream of tokens
 runParser ::
-     HasCallStack
-  => Parser a
+     FilePath
+  -> Parser a
   -> [Token TokenSpelling]
   -> Either MacroParseError a
-runParser p tokens =
+runParser sourcePath p tokens =
     first unrecognized $ Parsec.runParser p () sourcePath tokens
   where
-    sourcePath :: FilePath
-    sourcePath =
-        case tokens of
-          []  -> panicPure "runParser: empty list"
-          t:_ -> getSourcePath $ singleLocPath start
-            where
-              start :: SingleLoc
-              start = rangeStart $ multiLocExpansion <$> tokenExtent t
-
     unrecognized :: ParseError -> MacroParseError
     unrecognized err = MacroParseError{
           parseError       = show err
