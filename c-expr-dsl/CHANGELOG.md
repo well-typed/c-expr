@@ -11,6 +11,11 @@
   `parseMacroBody` consumes the entire token stream (it ends with `eof`).
   See [issue #2243][issue-2243].
 * `parseMacroType` likewise takes its formal parameters in source order.
+* `Token`, `MultiLoc`, and `SingleLoc` from `libclang-bindings` are now
+  parameterized by a path type. All uses in `c-expr-dsl` apply `SourcePath`,
+  e.g. `Token SourcePath TokenSpelling` where `Token TokenSpelling` appeared
+  before. This follows the upstream `libclang-bindings` change that distinguishes
+  raw clang paths (`SourcePath`) from canonical on-disk paths (`RealPath`).
 
 ### New features
 
