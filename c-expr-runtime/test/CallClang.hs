@@ -64,6 +64,7 @@ parseClangType cxTy = do
         -- '__size_t', and '__signed_size_t' as 'CXType_Unexposed' (see
         -- upstream https://github.com/llvm/llvm-project/issues/192268).
         -- Fall back to the canonical type to recover the underlying kind.
+        -- LLVM/Clang 23 and later report 'CXType_PredefinedSugar' instead.
         Clang.CXType_Unexposed           -> do { canTy <- Clang.clang_getCanonicalType cxTy
                                                ; case Clang.fromSimpleEnum $ Clang.cxtKind canTy of
                                                    Right Clang.CXType_Unexposed -> return Nothing
@@ -138,6 +139,8 @@ parseClangType cxTy = do
         Clang.CXType_Attributed          -> return Nothing
         Clang.CXType_ExtVector           -> return Nothing
         Clang.CXType_Atomic              -> return Nothing
+        Clang.CXType_PredefinedSugar     -> do { canTy <- Clang.clang_getCanonicalType cxTy
+                                               ; parseClangType canTy }
 
 -- | Query @clang@ for canonical names for types.
 getExpansionTypeMapping :: Clang.ClangArgs -> [ CType ] -> IO ( Map CType CType )
