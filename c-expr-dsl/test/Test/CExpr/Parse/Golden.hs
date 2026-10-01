@@ -27,7 +27,6 @@ import Clang.Enum.Simple
 import Clang.HighLevel qualified as HighLevel
 import Clang.HighLevel.Types
 import Clang.LowLevel.Core
-import Clang.Paths (getRealPathText)
 import Clang.Version
 
 import Paths_c_expr_dsl (getDataDir)
@@ -234,8 +233,7 @@ macroFold unit = simpleFold $ \cursor -> do
         case kind of
           Right CXCursor_MacroDefinition -> do
               name   <- clang_getCursorSpelling cursor
-              range  <- HighLevel.clang_getCursorExtent cursor
-              tokens <- HighLevel.clang_tokenize unit getRealPathText (multiLocExpansion <$> range)
+              tokens <- HighLevel.clang_tokenize unit =<< clang_getCursorExtent cursor
               foldContinueWith (name, tokens)
           _ ->
               foldContinue
