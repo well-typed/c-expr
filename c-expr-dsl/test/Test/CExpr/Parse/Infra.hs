@@ -32,22 +32,22 @@ import Test.CExpr.Util
 -------------------------------------------------------------------------------}
 
 -- | Construct a keyword token
-kw :: Text -> Token TokenSpelling
+kw :: Text -> Token SourcePath TokenSpelling
 kw = mkToken CXToken_Keyword
 
 -- | Construct an identifier token
-ident :: Text -> Token TokenSpelling
+ident :: Text -> Token SourcePath TokenSpelling
 ident = mkToken CXToken_Identifier
 
 -- | Construct a punctuation token
-punc :: Text -> Token TokenSpelling
+punc :: Text -> Token SourcePath TokenSpelling
 punc = mkToken CXToken_Punctuation
 
 -- | Construct a literal token
-lit :: Text -> Token TokenSpelling
+lit :: Text -> Token SourcePath TokenSpelling
 lit = mkToken CXToken_Literal
 
-mkToken :: CXTokenKind -> Text -> Token TokenSpelling
+mkToken :: CXTokenKind -> Text -> Token SourcePath TokenSpelling
 mkToken kind spelling = Token{
       tokenKind       = simpleEnum kind
     , tokenSpelling   = TokenSpelling spelling
@@ -64,7 +64,7 @@ mkToken kind spelling = Token{
 -- Adds 'eof' so that trailing tokens are rejected as parse failures.
 checkType ::
      ClangCStandard
-  -> [Token TokenSpelling]
+  -> [Token SourcePath TokenSpelling]
   -> Either MacroParseError (Expr Z (Ps ()))
 checkType cStd = runParser "<checkType>" (parseMacroType cStd VNil <* eof)
 
@@ -76,7 +76,7 @@ checkType cStd = runParser "<checkType>" (parseMacroType cStd VNil <* eof)
 checkBody ::
      ClangCStandard
   -> Vec ctx Identifier
-  -> [Token TokenSpelling]
+  -> [Token SourcePath TokenSpelling]
   -> Either MacroParseError (Expr ctx (Ps ()))
 checkBody cStd params = runParser "<checkBody>" (parseMacroBody cStd params)
 
