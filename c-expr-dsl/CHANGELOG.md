@@ -16,6 +16,8 @@
   e.g. `Token SourcePath TokenSpelling` where `Token TokenSpelling` appeared
   before. This follows the upstream `libclang-bindings` change that distinguishes
   raw clang paths (`SourcePath`) from canonical on-disk paths (`RealPath`).
+* Require `libclang-bindings` `>=0.2 && <0.3`, the release that contains the
+  path-parameterized types above.
 
 ### New features
 
