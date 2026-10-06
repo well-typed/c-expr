@@ -1,6 +1,6 @@
 # Revision history for `c-expr-dsl`
 
-## ?.?.?.? -- YYYY-mm-dd
+## 0.2.0.0 -- 2026-10-06
 
 ### Breaking changes
 
@@ -18,10 +18,6 @@
   raw clang paths (`SourcePath`) from canonical on-disk paths (`RealPath`).
 * Require `libclang-bindings` `>=0.2 && <0.3`, the release that contains the
   path-parameterized types above.
-
-### New features
-
-### Minor changes
 
 ### Bug fixes
 
