@@ -77,7 +77,7 @@ rejectPragma :: Parser ()
 rejectPragma =
     notFollowedBy (token isPragma) <?> "C expression (not a _Pragma operator)"
   where
-    isPragma :: Token TokenSpelling -> Maybe ()
+    isPragma :: Token SourcePath TokenSpelling -> Maybe ()
     isPragma t
       | getTokenSpelling (tokenSpelling t) == "_Pragma" = Just ()
       | otherwise                                       = Nothing
@@ -125,7 +125,7 @@ isParam n = isJust . lookupParam n
 --
 -- The shadowing is total: a spelling in scope has no meaning other than the
 -- parameter. Wherever a token is matched by kind rather than offered to this
--- parser first — 'keyword', and the tag name in 'taggedTypeLit' — that parser
+-- parser first -- 'keyword', and the tag name in 'taggedTypeLit' -- that parser
 -- must consult the scope itself and fail on a parameter spelling.
 paramRef :: Scope ctx -> Parser (Idx ctx)
 paramRef scope = token $ \t -> do
@@ -407,7 +407,7 @@ term cStd scope =
       , ValueString <$> literalString
       ]
 
-    ops :: OperatorTable [Token TokenSpelling] () Identity (Term ctx (Ps ()))
+    ops :: OperatorTable [Token SourcePath TokenSpelling] () Identity (Term ctx (Ps ()))
     ops = []
 
 
