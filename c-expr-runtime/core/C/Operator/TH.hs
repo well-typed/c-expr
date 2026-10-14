@@ -34,7 +34,7 @@ import Data.Function
   ( on )
 import Data.Kind qualified as Hs
 import Data.List
-  ( sortOn )
+  ( nub, sortOn )
 import Data.List.NonEmpty
   ( groupBy )
 
@@ -48,7 +48,7 @@ import Data.Type.Equality
 import Data.Void
   ( absurd )
 import Foreign
-  ( Ptr, plusPtr, minusPtr )
+  ( Ptr, Storable(sizeOf), advancePtr, minusPtr )
 import Foreign.C
 import qualified GHC.Exts as Foreign.C
   ( Ptr(Ptr) )
@@ -420,7 +420,17 @@ genInstance cls fam argTys resTy methImpl meths = do
 
               proveNm = TH.mkName proveStr
               ( provePats, mbProveGuard ) = mkSingPats ( toList argTys )
-              proveRes = TH.TupE [ Just ( mkSingExp resTy ), Just $ TH.VarE meth ]
+              proveRes = TH.TupE [ Just ( mkSingExp resTy ), Just proveMeth ]
+              -- The prover's signature has no room for the instance context,
+              -- so a clause with a context cannot return the method. It
+              -- raises an error when forced; @c-expr-dsl@ never evaluates
+              -- pointer arithmetic.
+              proveMeth
+                | null ctxt
+                = TH.VarE meth
+                | otherwise
+                = TH.VarE 'error `TH.AppE` TH.LitE ( TH.StringL $
+                    proveStr ++ ": not supported for pointer arguments: needs the pointee's Storable instance" )
 
               mkConversions :: [ Conversion ] -> TH.Exp -> TH.Exp
               mkConversions [] e = e
@@ -442,43 +452,50 @@ genInstance cls fam argTys resTy methImpl meths = do
                       zipWith mkConversions ( toList convs ) ( map TH.VarE argNms )
                   AddIntegralAndPtr ->
                     case argNms of
-                      [ i, p ] ->
-                        TH.VarE 'plusPtr
-                            `TH.AppE`
-                          ( TH.VarE p )
-                            `TH.AppE`
-                          ( TH.VarE 'fromIntegral `TH.AppE` TH.VarE i )
+                      [ i, p ] -> advance p ( TH.VarE 'fromIntegral `TH.AppE` TH.VarE i )
                       _ -> error $ "genInstance AddIntegralAndPtr: expected 2 arguments, but got: " ++ show args
                   AddPtrAndIntegral ->
                     case argNms of
-                      [ p, i ] ->
-                        TH.VarE 'plusPtr
-                            `TH.AppE`
-                          ( TH.VarE p )
-                            `TH.AppE`
-                          ( TH.VarE 'fromIntegral `TH.AppE` TH.VarE i )
+                      [ p, i ] -> advance p ( TH.VarE 'fromIntegral `TH.AppE` TH.VarE i )
                       _ -> error $ "genInstance AddPtrAndIntegral: expected 2 arguments, but got: " ++ show args
                   SubPtrAndPtr ->
-                    case argNms of
-                      [ p1, p2 ] ->
+                    case ( argNms, toList argTys ) of
+                      ( [ p1, p2 ], Ptr ty : _ ) ->
                         ( TH.VarE 'fromIntegral `TH.AppTypeE` TH.WildCardT `TH.AppTypeE` TH.ConT ''CPtrdiff )
                             `TH.AppE`
-                          ( TH.VarE 'minusPtr `TH.AppE` TH.VarE p1 `TH.AppE` TH.VarE p2 )
-                      _ -> error $ "genInstance SubPtrAndPtr: expected 2 arguments, but got: " ++ show args
+                          ( TH.VarE 'quot
+                              `TH.AppE`
+                            ( TH.VarE 'minusPtr `TH.AppE` TH.VarE p1 `TH.AppE` TH.VarE p2 )
+                              `TH.AppE`
+                            ( TH.VarE 'sizeOf `TH.AppE` TH.SigE ( TH.VarE 'undefined ) ( TH.VarT ty ) )
+                          )
+                      _ -> error $ "genInstance SubPtrAndPtr: expected 2 pointer arguments, but got: " ++ show args
                   SubPtrAndIntegral ->
                     case argNms of
                       [ p, i ] ->
-                        TH.VarE 'plusPtr
-                            `TH.AppE`
-                          ( TH.VarE p )
-                            `TH.AppE`
-                          ( TH.VarE 'fromIntegral `TH.AppE` ( TH.VarE 'Prelude.negate `TH.AppE` TH.VarE i ) )
+                        -- Negate after the conversion: negating an unsigned
+                        -- offset would wrap around.
+                        advance p ( TH.VarE 'Prelude.negate `TH.AppE` ( TH.VarE 'fromIntegral `TH.AppE` TH.VarE i ) )
                       _ -> error $ "genInstance SubPtrAndIntegral: expected 2 arguments, but got: " ++ show args
+              advance :: TH.Name -> TH.Exp -> TH.Exp
+              advance p n = TH.VarE 'advancePtr `TH.AppE` TH.VarE p `TH.AppE` n
         ]
       overlap :: Maybe TH.Overlap
       overlap = Nothing
       ctxt :: [ TH.Type ]
-      ctxt = [ ]
+      ctxt =
+        case methImpl of
+          ConvertThenOp {}  -> []
+          AddIntegralAndPtr -> storablePointees
+          AddPtrAndIntegral -> storablePointees
+          SubPtrAndPtr      -> storablePointees
+          SubPtrAndIntegral -> storablePointees
+      -- Pointer arithmetic counts elements of the pointee.
+      storablePointees :: [ TH.Type ]
+      storablePointees =
+        [ TH.ConT ''Storable `TH.AppT` TH.VarT ty
+        | ty <- nub [ ty | Ptr ty <- toList argTys ]
+        ]
   return $
     ( TH.InstanceD overlap ctxt clsTy ( famDecs ++ methDecs )
     , proveDecs

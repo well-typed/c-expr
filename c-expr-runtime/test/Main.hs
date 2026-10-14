@@ -9,6 +9,7 @@
 module Main where
 
 import Control.Arrow (first)
+import Control.Exception (ArithException (..), evaluate, try)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes)
@@ -17,9 +18,12 @@ import Data.Text qualified as Text
 import Data.Traversable (for)
 import Data.Type.Nat
 import Data.Vec.Lazy (Vec (..))
+import Foreign (Ptr, nullPtr, plusPtr)
+import Foreign.C.Types (CDouble, CInt, CPtrdiff, CUInt)
 import System.Exit
 import System.Info qualified as Info
 
+import C.Expr.HostPlatform qualified as C
 import C.Type
 import C.Type.Internal.Universe
 
@@ -91,10 +95,45 @@ main = do
             "   FAILED:"
           : map ( showFailure . first show ) bad
         pure $ Just bad
-  if null badUnary && null badBinary
+  putStrLn "Pointer arithmetic"
+  ptrArith <- pointerArithmeticTests
+  let badPtrArith = [ name | ( name, False ) <- ptrArith ]
+  if null badPtrArith
+  then putStrLn $ "   PASSED (" ++ show ( length ptrArith ) ++ " tests)"
+  else putStrLn $ unlines $ "   FAILED:" : map ( "   " ++ ) badPtrArith
+  if null badUnary && null badBinary && null badPtrArith
   then exitSuccess
   else exitFailure
 
+-- | Pointer arithmetic counts elements of the pointee, not bytes.
+--
+-- The @'Ptr' ()@ cases pin down the behavior documented on 'C.+' and 'C.-'.
+pointerArithmeticTests :: IO [ ( String, Bool ) ]
+pointerArithmeticTests = do
+  unitDiff <- try $ evaluate ( units4 C.- units )
+  pure
+    [ ( "int* + int"     , ( ints C.+ ( 4 :: CInt ) ) == ints4 )
+    , ( "int + int*"     , ( ( 4 :: CInt ) C.+ ints ) == ints4 )
+    , ( "int* - int"     , ( ints4 C.- ( 4 :: CInt ) ) == ints )
+    , ( "int* - unsigned", ( ints4 C.- ( 4 :: CUInt ) ) == ints )
+    , ( "int* - int*"    , ( ints4 C.- ints ) == ( 4 :: CPtrdiff ) )
+    , ( "int* - int* < 0", ( ints C.- ints4 ) == ( -4 :: CPtrdiff ) )
+    , ( "double* + int"  , ( doubles C.+ ( 4 :: CInt ) ) == doubles `plusPtr` 32 )
+    , ( "Ptr () + int"   , ( units4 C.+ ( 4 :: CInt ) ) == units4 )
+    , ( "Ptr () - int"   , ( units4 C.- ( 4 :: CInt ) ) == units4 )
+    , ( "Ptr () - Ptr ()", case unitDiff :: Either ArithException CPtrdiff of
+                             Left DivideByZero -> True
+                             _                 -> False )
+    ]
+  where
+    ints, ints4 :: Ptr CInt
+    ints  = nullPtr
+    ints4 = nullPtr `plusPtr` 16
+    doubles :: Ptr CDouble
+    doubles = nullPtr
+    units, units4 :: Ptr ()
+    units  = nullPtr
+    units4 = nullPtr `plusPtr` 4
 
 clangResourceDirArgs :: IO [ String ]
 clangResourceDirArgs = do

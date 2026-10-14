@@ -105,6 +105,14 @@ class Add a b where
   -- | Result type family of the C binary addition operator.
   type family AddRes a b :: Type
   -- | C binary addition operator.
+  --
+  -- With a pointer operand, @p + i@ and @i + p@ advance @p :: 'Ptr' ty@ by @i@
+  -- elements of @ty@, as in C. An element is
+  -- @'Foreign.Storable.sizeOf' (undefined :: ty)@ bytes.
+  --
+  -- __Warning:__ @'Ptr' ()@ typechecks, but @'Foreign.Storable.sizeOf' ()@ is
+  -- 0, so @p + i@ and @i + p@ return @p@ unchanged. For byte arithmetic, cast
+  -- to @'Ptr' 'Data.Word.Word8'@ first.
   (+) :: a -> b -> AddRes a b
 
 infixl 2 -
@@ -114,6 +122,16 @@ class Sub a b where
   -- | Result type family of the C binary subtraction operator.
   type family SubRes a b :: Type
   -- | C binary subtraction operator.
+  --
+  -- With pointer operands, @p - i@ moves @p :: 'Ptr' ty@ back by @i@ elements
+  -- of @ty@, and @p1 - p2@ is the number of elements of @ty@ from @p2@ to @p1@,
+  -- as in C. An element is @'Foreign.Storable.sizeOf' (undefined :: ty)@
+  -- bytes.
+  --
+  -- __Warning:__ @'Ptr' ()@ typechecks, but @'Foreign.Storable.sizeOf' ()@ is
+  -- 0, so @p - i@ silently returns @p@ unchanged, and @p1 - p2@ throws
+  -- 'Control.Exception.DivideByZero' at runtime. For byte arithmetic, cast to
+  -- @'Ptr' 'Data.Word.Word8'@ first.
   (-) :: a -> b -> SubRes a b
 
 infixl 1 *

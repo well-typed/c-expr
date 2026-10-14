@@ -97,7 +97,7 @@ library
     C.Expr.Util.TestEquality
 
   -- internal dependencies
-  build-depends:   c-expr-runtime >=0.1.0.0 && <0.2
+  build-depends:   c-expr-runtime >=0.1.0.0 && <0.3
 
   -- external dependencies
   build-depends:
