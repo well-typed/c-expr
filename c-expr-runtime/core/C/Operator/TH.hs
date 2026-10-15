@@ -48,7 +48,7 @@ import Data.Type.Equality
 import Data.Void
   ( absurd )
 import Foreign
-  ( Ptr, Storable(sizeOf), advancePtr, minusPtr )
+  ( Ptr, sizeOf, advancePtr, minusPtr )
 import Foreign.C
 import qualified GHC.Exts as Foreign.C
   ( Ptr(Ptr) )
@@ -419,18 +419,8 @@ genInstance cls fam argTys resTy methImpl meths = do
               args = zip argNms ( toList argTys )
 
               proveNm = TH.mkName proveStr
-              ( provePats, mbProveGuard ) = mkSingPats ( toList argTys )
-              proveRes = TH.TupE [ Just ( mkSingExp resTy ), Just proveMeth ]
-              -- The prover's signature has no room for the instance context,
-              -- so a clause with a context cannot return the method. It
-              -- raises an error when forced; @c-expr-dsl@ never evaluates
-              -- pointer arithmetic.
-              proveMeth
-                | null ctxt
-                = TH.VarE meth
-                | otherwise
-                = TH.VarE 'error `TH.AppE` TH.LitE ( TH.StringL $
-                    proveStr ++ ": not supported for pointer arguments: needs the pointee's Storable instance" )
+              ( provePats, mbProveGuard ) = mkSingPats pointees ( toList argTys )
+              proveRes = TH.TupE [ Just ( mkSingExp resTy ), Just $ TH.VarE meth ]
 
               mkConversions :: [ Conversion ] -> TH.Exp -> TH.Exp
               mkConversions [] e = e
@@ -482,20 +472,22 @@ genInstance cls fam argTys resTy methImpl meths = do
         ]
       overlap :: Maybe TH.Overlap
       overlap = Nothing
+      pointees :: Pointees
+      pointees =
+        case methImpl of
+          ConvertThenOp {}  -> AnyPointees
+          AddIntegralAndPtr -> ObjectPointees
+          AddPtrAndIntegral -> ObjectPointees
+          SubPtrAndPtr      -> ObjectPointees
+          SubPtrAndIntegral -> ObjectPointees
       ctxt :: [ TH.Type ]
       ctxt =
-        case methImpl of
-          ConvertThenOp {}  -> []
-          AddIntegralAndPtr -> storablePointees
-          AddPtrAndIntegral -> storablePointees
-          SubPtrAndPtr      -> storablePointees
-          SubPtrAndIntegral -> storablePointees
-      -- Pointer arithmetic counts elements of the pointee.
-      storablePointees :: [ TH.Type ]
-      storablePointees =
-        [ TH.ConT ''Storable `TH.AppT` TH.VarT ty
-        | ty <- nub [ ty | Ptr ty <- toList argTys ]
-        ]
+        case pointees of
+          AnyPointees    -> []
+          ObjectPointees ->
+            [ TH.ConT ''Pointee `TH.AppT` TH.VarT ty
+            | ty <- nub [ ty | Ptr ty <- toList argTys ]
+            ]
   return $
     ( TH.InstanceD overlap ctxt clsTy ( famDecs ++ methDecs )
     , proveDecs
@@ -521,16 +513,27 @@ mkType = \case
 mkSingTy :: TH.Type -> TH.Type
 mkSingTy ty = ( TH.ConT ''SType ) `TH.AppT` TH.VarT ( TH.mkName "rec" ) `TH.AppT` ty
 
-mkSingPats :: [ Type TH.Name ] -> ( [ TH.Pat ], Maybe TH.Guard )
-mkSingPats tys = ( map ( mkSingPat . mkOne ) tickedTys, if null guards then Nothing else Just $ TH.PatG guards )
+-- | Which pointees the pointer arguments of an instance accept.
+data Pointees
+  = -- | Any pointee, including @void@.
+    AnyPointees
+  | -- | Only object types: the instance needs t'Pointee'.
+    ObjectPointees
+
+mkSingPats :: Pointees -> [ Type TH.Name ] -> ( [ TH.Pat ], Maybe TH.Guard )
+mkSingPats pointees tys = ( map mkOne tickedTys, if null guards then Nothing else Just $ TH.PatG guards )
   where
     tickedTys = mkTicked 0 tys
     mkTicked :: Int -> [ Type TH.Name ] -> [ Either ( TH.Name, Int ) ( Type TH.Name ) ]
     mkTicked _ [] = []
     mkTicked i ( Ptr nm : rest ) = Left ( nm, i ) : mkTicked ( i + 1 )rest
     mkTicked i ( ty : rest ) = Right ty : mkTicked i rest
-    mkOne ( Left ( nm, i ) ) = Ptr $ mkTickedName nm i
-    mkOne ( Right ty ) = ty
+    mkOne ( Left ( nm, i ) ) =
+      case pointees of
+        AnyPointees    -> mkSingPat $ Ptr $ mkTickedName nm i
+        ObjectPointees ->
+          TH.ConP 'SPtr [] [ TH.AsP ( mkTickedName nm i ) ( TH.ConP 'SObjPointee [] [ TH.WildP ] ) ]
+    mkOne ( Right ty ) = mkSingPat ty
     guards = concat $ mapMaybe mkGroup $ groupBy ( (==) `on` fst ) $ mapMaybe oneGuard tickedTys
     mkGroup :: NE.NonEmpty ( TH.Name, Int ) -> Maybe [ TH.Stmt ]
     mkGroup ( _ NE.:| [] ) = Nothing

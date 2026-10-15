@@ -9,7 +9,6 @@
 module Main where
 
 import Control.Arrow (first)
-import Control.Exception (ArithException (..), evaluate, try)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes)
@@ -106,24 +105,18 @@ main = do
   else exitFailure
 
 -- | Pointer arithmetic counts elements of the pointee, not bytes.
---
--- The @'Ptr' ()@ cases pin down the behavior documented on 'C.+' and 'C.-'.
 pointerArithmeticTests :: IO [ ( String, Bool ) ]
-pointerArithmeticTests = do
-  unitDiff <- try $ evaluate ( units4 C.- units )
+pointerArithmeticTests =
   pure
-    [ ( "int* + int"     , ( ints C.+ ( 4 :: CInt ) ) == ints4 )
-    , ( "int + int*"     , ( ( 4 :: CInt ) C.+ ints ) == ints4 )
-    , ( "int* - int"     , ( ints4 C.- ( 4 :: CInt ) ) == ints )
-    , ( "int* - unsigned", ( ints4 C.- ( 4 :: CUInt ) ) == ints )
-    , ( "int* - int*"    , ( ints4 C.- ints ) == ( 4 :: CPtrdiff ) )
-    , ( "int* - int* < 0", ( ints C.- ints4 ) == ( -4 :: CPtrdiff ) )
-    , ( "double* + int"  , ( doubles C.+ ( 4 :: CInt ) ) == doubles `plusPtr` 32 )
-    , ( "Ptr () + int"   , ( units4 C.+ ( 4 :: CInt ) ) == units4 )
-    , ( "Ptr () - int"   , ( units4 C.- ( 4 :: CInt ) ) == units4 )
-    , ( "Ptr () - Ptr ()", case unitDiff :: Either ArithException CPtrdiff of
-                             Left DivideByZero -> True
-                             _                 -> False )
+    [ ( "int* + int"       , ( ints C.+ ( 4 :: CInt ) ) == ints4 )
+    , ( "int + int*"       , ( ( 4 :: CInt ) C.+ ints ) == ints4 )
+    , ( "int* - int"       , ( ints4 C.- ( 4 :: CInt ) ) == ints )
+    , ( "int* - unsigned"  , ( ints4 C.- ( 4 :: CUInt ) ) == ints )
+    , ( "int* - int*"      , ( ints4 C.- ints ) == ( 4 :: CPtrdiff ) )
+    , ( "int* - int* < 0"  , ( ints C.- ints4 ) == ( -4 :: CPtrdiff ) )
+    , ( "double* + int"    , ( doubles C.+ ( 4 :: CInt ) ) == doubles `plusPtr` 32 )
+    , ( "singAdd int* int" , snd ( C.singAdd sIntPtr sInt ) ints 4 == ints4 )
+    , ( "singSub int* int*", snd ( C.singSub sIntPtr sIntPtr ) ints4 ints == 4 )
     ]
   where
     ints, ints4 :: Ptr CInt
@@ -131,9 +124,12 @@ pointerArithmeticTests = do
     ints4 = nullPtr `plusPtr` 16
     doubles :: Ptr CDouble
     doubles = nullPtr
-    units, units4 :: Ptr ()
-    units  = nullPtr
-    units4 = nullPtr `plusPtr` 4
+    sIntArith :: SArithmeticType CInt
+    sIntArith = SIntegral $ SIntLike SInt
+    sInt :: SType SArithmeticType CInt
+    sInt = SArithmetic sIntArith
+    sIntPtr :: SType SArithmeticType ( Ptr CInt )
+    sIntPtr = SPtr $ SObjPointee sIntArith
 
 clangResourceDirArgs :: IO [ String ]
 clangResourceDirArgs = do

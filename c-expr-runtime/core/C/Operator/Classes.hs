@@ -108,11 +108,7 @@ class Add a b where
   --
   -- With a pointer operand, @p + i@ and @i + p@ advance @p :: 'Ptr' ty@ by @i@
   -- elements of @ty@, as in C. An element is
-  -- @'Foreign.Storable.sizeOf' (undefined :: ty)@ bytes.
-  --
-  -- __Warning:__ @'Ptr' ()@ typechecks, but @'Foreign.Storable.sizeOf' ()@ is
-  -- 0, so @p + i@ and @i + p@ return @p@ unchanged. For byte arithmetic, cast
-  -- to @'Ptr' 'Data.Word.Word8'@ first.
+  -- @'Foreign.Storable.sizeOf' (undefined :: ty)@ bytes; see 'C.Type.Pointee'.
   (+) :: a -> b -> AddRes a b
 
 infixl 2 -
@@ -126,12 +122,7 @@ class Sub a b where
   -- With pointer operands, @p - i@ moves @p :: 'Ptr' ty@ back by @i@ elements
   -- of @ty@, and @p1 - p2@ is the number of elements of @ty@ from @p2@ to @p1@,
   -- as in C. An element is @'Foreign.Storable.sizeOf' (undefined :: ty)@
-  -- bytes.
-  --
-  -- __Warning:__ @'Ptr' ()@ typechecks, but @'Foreign.Storable.sizeOf' ()@ is
-  -- 0, so @p - i@ silently returns @p@ unchanged, and @p1 - p2@ throws
-  -- 'Control.Exception.DivideByZero' at runtime. For byte arithmetic, cast to
-  -- @'Ptr' 'Data.Word.Word8'@ first.
+  -- bytes; see 'C.Type.Pointee'.
   (-) :: a -> b -> SubRes a b
 
 infixl 1 *

@@ -6,18 +6,12 @@
 
 - Pointer arithmetic counts elements of the pointee, as in C, and not bytes:
   `p + i`, and `i + p` (`p - i`) advance (move back) `p` by `i` elements, and
-  `p1 - p2` counts the elements between `p1` and `p2`.
-  The size of the step comes from the `Storable` instance of the pointee, so the
-  `Add` and `Sub` instances for `Ptr ty` now require `Storable ty`. Pointers to
-  opaque types have no instance, which results in a type error as in C. See
-  [issue #2306][issue-2306].
-- **Warning:** arithmetic on `Ptr ()` typechecks but is not meaningful, because
-  `sizeOf ()` is 0. `p + i`, `i + p` and `p - i` silently return `p` unchanged,
-  and `p1 - p2` throws `DivideByZero` at runtime. For byte arithmetic, cast to
-  `Ptr Word8` first.
-- The function returned by `singAdd` and `singSub` for pointer arguments raises
-  an error: lacking the `Storable` instance, it cannot compute the result. The
-  result type singleton remains available.
+  `p1 - p2` counts the elements between `p1` and `p2`. The `Add` and `Sub`
+  instances for `Ptr ty` now require the new class `Pointee ty`: `Pointee`s are
+  `Storable ty`, whose `sizeOf` is the size of the step. In particular, neither
+  `Void` nor `()` are instance of `Pointee`. Arithmetic on `Ptr ()` (`void *`)
+  and on pointers to opaque types is a type error, as in C; for byte
+  arithmetic, cast to `Ptr Word8` first. See [issue #2306][issue-2306].
 
 ### New features
 
