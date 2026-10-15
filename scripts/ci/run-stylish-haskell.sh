@@ -30,7 +30,12 @@ export LC_ALL=C.UTF-8
 
 # Default values for command-line options
 check_mode="all"
-use_git_diff=true
+check_changes=true
+
+# Copies of the checked files from before formatting, and the files that
+# stylish-haskell changed
+backup_dir=""
+changed_files=()
 
 # ==============================================================================
 # Usage and Help
@@ -45,13 +50,13 @@ Check Haskell files with 'stylish-haskell'; by default check all files.
 Options:
   -u    Only check uncommitted files
   -c    Only check committed files in HEAD
-  -g    Don't show the diff with git
+  -g    Only format: don't show diffs or fail on changes
   -h    Show this help message
 
 Examples:
   ${SCRIPT_NAME}          # Check all Haskell files
   ${SCRIPT_NAME} -u       # Check only uncommitted files
-  ${SCRIPT_NAME} -c -g    # Check committed files without showing git diff
+  ${SCRIPT_NAME} -c -g    # Format committed files without checking
 
 EOF
     exit "${EXIT_SUCCESS}"
@@ -219,8 +224,15 @@ process_file() {
     fi
 
     log_info "Checking: ${file}"
+    if [[ "${check_changes}" == true ]]; then
+        mkdir -p "${backup_dir}/$(dirname "${file}")"
+        cp "${file}" "${backup_dir}/${file}"
+    fi
     # shellcheck disable=SC2086
     stylish-haskell ${STYLISH_ARGS} "${file}"
+    if [[ "${check_changes}" == true ]] && ! cmp -s "${backup_dir}/${file}" "${file}"; then
+        changed_files+=("${file}")
+    fi
 }
 
 # Process all files in the list
@@ -240,17 +252,20 @@ process_files() {
     done <<< "${files}"
 }
 
-# Check for formatting changes using git diff
+# Check for formatting changes by comparing each file with its copy from
+# before formatting; unlike `git diff`, this ignores uncommitted edits
 check_formatting_changes() {
-    if [[ "${use_git_diff}" == true ]]; then
+    local file
+
+    if [[ "${check_changes}" == true ]]; then
         log_info "Checking for formatting changes..."
 
-        # We only check differences in Haskell source code, because other files
-        # may change in CI (e.g., `cabal.project` files).
-        if ! git diff --exit-code --quiet *.hs; then
+        if (( ${#changed_files[@]} > 0 )); then
             log_info ""
-            log_info "Git diff after stylish-haskell:"
-            git diff *.hs
+            log_info "Diff after stylish-haskell:"
+            for file in "${changed_files[@]}"; do
+                diff -u -L "a/${file}" -L "b/${file}" "${backup_dir}/${file}" "${file}" || true
+            done
             log_error "stylish-haskell made changes. Please commit them or run this script to fix formatting."
             return "${EXIT_FORMATTING_CHANGES}"
         fi
@@ -276,7 +291,7 @@ parse_options() {
                 check_mode="committed"
                 ;;
             g)
-                use_git_diff=false
+                check_changes=false
                 ;;
             h)
                 usage
@@ -298,6 +313,9 @@ main() {
         log_error "stylish-haskell not found. Please install it first."
         exit "${EXIT_INVALID_OPTION}"
     fi
+
+    backup_dir="$(mktemp -d)"
+    trap 'rm -rf "${backup_dir}"' EXIT
 
     # Get and process files
     local files

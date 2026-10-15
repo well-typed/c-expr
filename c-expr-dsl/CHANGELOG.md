@@ -1,5 +1,17 @@
 # Revision history for `c-expr-dsl`
 
+## ?.?.?.? -- YYYY-mm-dd
+
+### Breaking changes
+
+### New features
+
+### Minor changes
+
+* Allow `c-expr-runtime` 0.2.
+
+### Bug fixes
+
 ## 0.2.0.0 -- 2026-10-06
 
 ### Breaking changes

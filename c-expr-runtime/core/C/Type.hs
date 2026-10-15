@@ -4,6 +4,8 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 module C.Type
   ( -- * C types
@@ -26,8 +28,14 @@ module C.Type
   , Platform(..), WordWidth(..), OS(..)
   , hostPlatform
 
+  -- * Pointees
+  , Pointee
+  , NotVoid
+
   -- * Singletons for C types
   , SType(..)
+  , SPointee(..)
+  , unSPointee
   , SArithmeticType(..)
   , SIntegralType(..)
   , SCharLikeType(..)
@@ -66,8 +74,9 @@ import Data.Semigroup (Arg (..))
 import Data.Type.Equality
 import Foreign.C.Types
 import Foreign.Ptr qualified as Foreign (Ptr)
-import Foreign.Storable (sizeOf)
+import Foreign.Storable (Storable, sizeOf)
 import GHC.Generics (Generic)
+import GHC.TypeLits (ErrorMessage (..), TypeError)
 import System.Info qualified (os)
 
 --------------------------------------------------------------------------------
@@ -293,14 +302,44 @@ showIntLikeTypeAsCType = \case
       Unsigned -> ( "unsigned " ++ )
 
 --------------------------------------------------------------------------------
+-- Pointees
+
+-- | The pointee must not be @void@ because it has no size.
+type NotVoid :: Hs.Type -> Hs.Constraint
+type family NotVoid ty where
+  NotVoid () = TypeError ( 'Text "Pointer arithmetic on 'void *' is not allowed in C; cast the pointer first." )
+  NotVoid _  = ()
+
+-- | A valid pointee: an object type with non-zero 'sizeOf'.
+--
+-- Pointer arithmetic can step over a pointee.
+class    ( Storable ty, NotVoid ty ) => Pointee ty
+instance ( Storable ty, NotVoid ty ) => Pointee ty
+
+--------------------------------------------------------------------------------
 -- Singletons
 
 type SType :: ( Hs.Type -> Hs.Type ) -> Hs.Type -> Hs.Type
 data SType rec a where
   SVoid :: SType rec ()
   SArithmetic :: !( SArithmeticType ty ) -> SType rec ty
-  SPtr :: rec ty -> SType rec ( Foreign.Ptr ty )
+  SPtr :: !( SPointee rec ty ) -> SType rec ( Foreign.Ptr ty )
 deriving stock instance ( forall x. Show ( rec x ) ) => Show ( SType rec a )
+
+-- | Singleton for the pointee of 'SPtr'.
+type SPointee :: ( Hs.Type -> Hs.Type ) -> Hs.Type -> Hs.Type
+data SPointee rec ty where
+  -- | @void@: pointer arithmetic is not allowed.
+  SVoidPointee :: rec () -> SPointee rec ()
+  -- | An object type: pointer arithmetic is allowed.
+  SObjPointee :: Pointee ty => rec ty -> SPointee rec ty
+deriving stock instance ( forall x. Show ( rec x ) ) => Show ( SPointee rec ty )
+
+-- | The singleton of the pointee type, whether @void@ or not.
+unSPointee :: SPointee rec ty -> rec ty
+unSPointee = \case
+  SVoidPointee a -> a
+  SObjPointee  a -> a
 
 data SArithmeticType ty where
   SIntegral  :: !( SIntegralType ty ) -> SArithmeticType ty
@@ -345,6 +384,10 @@ instance GEq rec => GEq ( SType rec ) where
       Just Refl -> Just Refl
       Nothing   -> Nothing
   geq _ _ = Nothing
+instance GEq rec => GEq ( SPointee rec ) where
+  geq (SVoidPointee _) (SVoidPointee _) = Just Refl
+  geq (SObjPointee a) (SObjPointee b) = geq a b
+  geq _ _ = Nothing
 instance GEq SArithmeticType where
   geq (SIntegral a) (SIntegral b) = geq a b
   geq (SFloatLike a) (SFloatLike b) = geq a b
@@ -378,7 +421,7 @@ instance GEq SIntLikeType where
   geq SPtrDiff   SPtrDiff   = Just Refl
   geq _ _ = Nothing
 
-promoteType :: ( a -> ( forall ty. rec ty -> r ) -> r ) -> Type a -> ( forall ty. ( Ord ty, Show ty ) => SType rec ty -> r ) -> r
+promoteType :: ( a -> ( forall ty. SPointee rec ty -> r ) -> r ) -> Type a -> ( forall ty. ( Ord ty, Show ty ) => SType rec ty -> r ) -> r
 promoteType recur ty f = case ty of
   Void -> f SVoid
   Arithmetic i -> promoteArithmeticType i ( f . SArithmetic )
@@ -430,7 +473,7 @@ demoteType :: ( forall ty'. rec ty' -> a ) -> SType rec ty -> Type a
 demoteType recur = \case
   SVoid -> Void
   SArithmetic a -> Arithmetic $ demoteArithmeticType a
-  SPtr a -> Ptr $ recur a
+  SPtr a -> Ptr $ recur $ unSPointee a
 
 demoteArithmeticType :: SArithmeticType ty -> ArithmeticType
 demoteArithmeticType = \case
@@ -478,7 +521,7 @@ witnessType recur ty f =
   case ty of
     SVoid  -> f
     SArithmetic i -> witnessArithmeticType @c i f
-    SPtr p -> recur p f
+    SPtr p -> recur ( unSPointee p ) f
 
 witnessArithmeticType
   :: forall c ty r
