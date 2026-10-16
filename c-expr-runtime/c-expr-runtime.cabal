@@ -123,7 +123,7 @@ test-suite tests
   -- Internal dependencies
   build-depends:
     , c-expr-runtime
-    , libclang-bindings
+    , libclang-bindings  >=0.2 && <0.3
 
   -- Inherited dependencies
   build-depends:
