@@ -1,5 +1,7 @@
 # `c-expr`
 
+[![Hackage: c-expr-dsl](https://img.shields.io/hackage/v/c-expr-dsl?label=Hackage:%20c-expr-dsl)](https://hackage.haskell.org/package/c-expr-dsl)
+[![Hackage: c-expr-runtime](https://img.shields.io/hackage/v/c-expr-runtime?label=Hackage:%20c-expr-runtime)](https://hackage.haskell.org/package/c-expr-runtime)
 [![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-lightgray.svg)](https://github.com/well-typed/c-expr/blob/main/LICENSE)
 [![Build Status](https://github.com/well-typed/c-expr/actions/workflows/haskell.yml/badge.svg)](https://github.com/well-typed/c-expr/actions)
 
